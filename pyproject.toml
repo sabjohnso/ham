@@ -1,0 +1,57 @@
+[project]
+name = "ham"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Samuel B. Johnson",email = "sabjohnso@yahoo.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "sympy (>=1.14.0,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+ipython = "^9.13.0"
+pytest = "^9.0.3"
+hypothesis = "^6.152.4"
+ruff = "^0.15.12"
+mypy = "^2.0.0"
+pre-commit = "^4.6.0"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["ham", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "SIM", # flake8-simplify
+    "C4",  # flake8-comprehensions
+    "RUF", # ruff-specific
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["ham", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["sympy.*"]
+ignore_missing_imports = true
+

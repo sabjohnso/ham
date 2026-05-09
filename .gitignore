@@ -1,0 +1,44 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments (poetry uses a central env by default, but in-project
+# .venv is common when POETRY_VIRTUALENVS_IN_PROJECT=1)
+.venv/
+venv/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Other editors
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Private working files (private to the user; never to be committed)
+PLAN.org
+ISSUES.org

@@ -9,8 +9,28 @@ from ham.series import QSeries
 from hypothesis import strategies as st
 
 MAX_ORDER = 6
+MAX_COEFF_DEGREE = 3
 COEFF_MIN = -100
 COEFF_MAX = 100
+
+X = sp.Symbol("x")
+"""The independent variable used by all coefficient strategies."""
+
+
+@st.composite
+def polynomial_in_x(draw: st.DrawFn, max_degree: int = MAX_COEFF_DEGREE) -> sp.Expr:
+    """Draw a polynomial in `X` with sympy.Integer coefficients."""
+    raw = draw(
+        st.lists(
+            st.integers(min_value=COEFF_MIN, max_value=COEFF_MAX),
+            min_size=1,
+            max_size=max_degree + 1,
+        )
+    )
+    expr: sp.Expr = sp.Integer(0)
+    for k, c in enumerate(raw):
+        expr = expr + sp.Integer(c) * X**k
+    return expr
 
 
 @st.composite
@@ -52,3 +72,17 @@ def three_qseries_same_order(
     b = draw(qseries_at_order(order=order))
     c = draw(qseries_at_order(order=order))
     return a, b, c
+
+
+@st.composite
+def qseries_polynomial_coeffs(draw: st.DrawFn) -> QSeries:
+    """Draw a QSeries whose coefficients are polynomials in X."""
+    order = draw(st.integers(min_value=0, max_value=MAX_ORDER))
+    coeffs = draw(
+        st.lists(
+            polynomial_in_x(),
+            min_size=0,
+            max_size=order + 1,
+        )
+    )
+    return QSeries(coeffs, order=order)

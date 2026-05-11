@@ -208,19 +208,98 @@ def test_apply_series_causality_in_q(phi: QSeries) -> None:
         assert sp.expand(result_orig.coeff(k) - result_perturbed.coeff(k)) == 0
 
 
-def test_apply_series_derivative_not_supported_yet() -> None:
-    """A Derivative node in expr raises NotImplementedError until 3c lands."""
-    expr = U(X).diff(X)
+def test_apply_series_transcendental_not_supported() -> None:
+    """A sin(u) node in expr raises NotImplementedError (compiler rejects it)."""
+    expr = sp.sin(U(X))
     n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
     phi = QSeries([X, X**2], order=1)
     with pytest.raises(NotImplementedError):
         n_op.apply_series(phi)
 
 
-def test_apply_series_transcendental_not_supported() -> None:
-    """A sin(u) node in expr raises NotImplementedError (compiler rejects it)."""
-    expr = sp.sin(U(X))
+# --- Stage 3c: apply_series with x-derivatives of u -----------------------
+
+
+def test_apply_series_first_derivative_in_u() -> None:
+    """N(u) = u': apply_series differentiates each q-coefficient in x."""
+    expr = U(X).diff(X)
     n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
-    phi = QSeries([X, X**2], order=1)
+    phi = QSeries([X**2, X, sp.Integer(5)], order=2)
+    result = n_op.apply_series(phi)
+    assert result.order == phi.order
+    assert sp.expand(result.coeff(0) - 2 * X) == 0
+    assert sp.expand(result.coeff(1) - 1) == 0
+    assert sp.expand(result.coeff(2) - 0) == 0
+
+
+def test_apply_series_second_derivative_in_u() -> None:
+    """N(u) = u'': apply_series differentiates each q-coefficient in x twice."""
+    expr = U(X).diff(X, 2)
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([X**3, X**2], order=1)
+    result = n_op.apply_series(phi)
+    assert result.order == phi.order
+    assert sp.expand(result.coeff(0) - 6 * X) == 0
+    assert sp.expand(result.coeff(1) - 2) == 0
+
+
+def test_apply_series_u_times_u_prime_explicit_cauchy() -> None:
+    """N(u) = u·u': result.coeff(k) == sum_{i+j=k} phi.coeff(i) * d/dx phi.coeff(j)."""
+    expr = U(X) * U(X).diff(X)
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([X**2, X, sp.Integer(5)], order=2)
+    result = n_op.apply_series(phi)
+    for k in range(phi.order + 1):
+        expected: sp.Expr = sp.Integer(0)
+        for i in range(k + 1):
+            expected = expected + phi.coeff(i) * sp.diff(phi.coeff(k - i), X)
+        assert sp.expand(result.coeff(k) - expected) == 0
+
+
+def test_apply_series_sum_of_u_and_u_prime() -> None:
+    """N(u) = u + u': result == phi + phi.map_coeffs(d/dx) coefficient-wise."""
+    expr = U(X) + U(X).diff(X)
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([X**2, X], order=1)
+    result = n_op.apply_series(phi)
+    assert sp.expand(result.coeff(0) - (X**2 + 2 * X)) == 0
+    assert sp.expand(result.coeff(1) - (X + 1)) == 0
+
+
+@given(phi=qseries_polynomial_coeffs())
+def test_apply_series_first_derivative_matches_map_coeffs(phi: QSeries) -> None:
+    """N(u) = u': apply_series(phi) agrees with phi.map_coeffs(d/dx)."""
+    expr = U(X).diff(X)
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    result = n_op.apply_series(phi)
+    expected = phi.map_coeffs(lambda c: sp.diff(c, X))
+    assert result.order == expected.order
+    for k in range(phi.order + 1):
+        assert sp.expand(result.coeff(k) - expected.coeff(k)) == 0
+
+
+@given(phi=qseries_polynomial_coeffs())
+def test_apply_series_u_times_u_prime_matches_cauchy(phi: QSeries) -> None:
+    """N(u) = u·u': result == (phi * phi.map_coeffs(d/dx)).trunc(phi.order)."""
+    expr = U(X) * U(X).diff(X)
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    result = n_op.apply_series(phi)
+    phi_prime = phi.map_coeffs(lambda c: sp.diff(c, X))
+    expected = (phi * phi_prime).trunc(phi.order)
+    for k in range(phi.order + 1):
+        assert sp.expand(result.coeff(k) - expected.coeff(k)) == 0
+
+
+def test_apply_series_derivative_of_non_u_rejected() -> None:
+    """Derivative(u(x)*x, x) is not Derivative(u(x), x); compiler rejects it.
+
+    Sympy keeps this as an unevaluated Derivative whose `expr` is the
+    product u(x)*x, not u(x) alone. The compiler is not a product-rule
+    engine and surfaces a NotImplementedError; the user should write
+    out the product rule explicitly (u'·x + u).
+    """
+    expr = sp.Derivative(U(X) * X, X)
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([X, sp.Integer(1)], order=1)
     with pytest.raises(NotImplementedError):
         n_op.apply_series(phi)

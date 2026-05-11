@@ -71,6 +71,8 @@ class NonlinearOperator:
             return QSeries.constant(node, order=phi.order)
         if node == self.dependent(self.indep):
             return phi
+        if isinstance(node, sp.Derivative):
+            return self._compile_derivative(node, phi)
         if isinstance(node, sp.Add):
             result = QSeries.zero(order=phi.order)
             for arg in node.args:
@@ -90,7 +92,29 @@ class NonlinearOperator:
             return result
         raise NotImplementedError(
             f"NonlinearOperator.apply_series cannot compile subexpression "
-            f"{node!r} (sympy type {type(node).__name__}). Polynomial-in-u "
-            f"with no derivatives is supported in Stage 3b; derivatives "
-            f"land in 3c; transcendentals (sin u, exp u, ...) in 3d."
+            f"{node!r} (sympy type {type(node).__name__}). Transcendental "
+            f"dependencies on u (sin u, exp u, log u, ...) are deferred "
+            f"to Stage 3d; raise an issue if a worked example needs one."
         )
+
+    def _compile_derivative(self, node: sp.Derivative, phi: QSeries) -> QSeries:
+        """Compile a Derivative(u(indep), indep, k) node into coefficient-wise diff.
+
+        Only handles derivatives applied directly to `dependent(indep)` and
+        taken in `indep` alone. A derivative whose inner expression is any
+        product, sum, or other composition involving u (e.g.
+        `Derivative(u(x)*x, x)`) raises NotImplementedError — the compiler
+        is not a product-rule engine. Users should expand such derivatives
+        symbolically before constructing the NonlinearOperator.
+        """
+        bare_u = self.dependent(self.indep)
+        only_indep = len(node.variable_count) == 1 and node.variable_count[0][0] == self.indep
+        if node.expr != bare_u or not only_indep:
+            raise NotImplementedError(
+                f"NonlinearOperator.apply_series only handles derivatives of "
+                f"the form Derivative({self.dependent}({self.indep}), "
+                f"{self.indep}, k); got {node!r}. Expand the derivative "
+                f"symbolically before constructing the NonlinearOperator."
+            )
+        k = int(node.variable_count[0][1])
+        return phi.map_coeffs(lambda c: sp.diff(c, self.indep, k))

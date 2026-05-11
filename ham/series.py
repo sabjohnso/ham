@@ -22,6 +22,11 @@ class QSeries:
         """Return the additive-identity series at the given truncation order."""
         return cls([], order=order)
 
+    @classmethod
+    def constant(cls, expr: sp.Expr, order: int) -> "QSeries":
+        """Lift an x-only expression to a constant series: coeff(0)=expr, rest=0."""
+        return cls([expr], order=order)
+
     @property
     def order(self) -> int:
         return self._order

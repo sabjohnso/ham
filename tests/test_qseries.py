@@ -317,3 +317,41 @@ def test_map_coeffs_identity_is_no_op(a: QSeries) -> None:
     assert mapped.order == a.order
     for k in range(a.order + 1):
         assert mapped.coeff(k) == a.coeff(k)
+
+
+# --- Constant lift ---------------------------------------------------------
+
+
+@given(order=st.integers(min_value=0, max_value=MAX_ORDER))
+def test_constant_series_preserves_order(order: int) -> None:
+    """QSeries.constant(expr, order).order == order."""
+    s = QSeries.constant(X**2 + sp.Integer(3), order=order)
+    assert s.order == order
+
+
+@given(order=st.integers(min_value=0, max_value=MAX_ORDER))
+def test_constant_series_zeroth_coefficient_is_expr(order: int) -> None:
+    """QSeries.constant(expr, order).coeff(0) == expr."""
+    expr = X**2 + sp.Integer(3) * X - sp.Integer(7)
+    s = QSeries.constant(expr, order=order)
+    assert sp.expand(s.coeff(0) - expr) == 0
+
+
+@given(
+    order=st.integers(min_value=1, max_value=MAX_ORDER),
+    k=st.integers(min_value=1, max_value=MAX_ORDER),
+)
+def test_constant_series_higher_coefficients_are_zero(order: int, k: int) -> None:
+    """QSeries.constant(expr, order).coeff(k) == 0 for k >= 1."""
+    s = QSeries.constant(X**2 + sp.Integer(3), order=order)
+    assert s.coeff(k) == sp.Integer(0)
+
+
+@given(order=st.integers(min_value=0, max_value=MAX_ORDER))
+def test_constant_of_zero_equals_zero_series(order: int) -> None:
+    """QSeries.constant(0, order) agrees with QSeries.zero(order) coefficient-wise."""
+    c0 = QSeries.constant(sp.Integer(0), order=order)
+    z = QSeries.zero(order=order)
+    assert c0.order == z.order
+    for k in range(order + 1):
+        assert c0.coeff(k) == z.coeff(k)

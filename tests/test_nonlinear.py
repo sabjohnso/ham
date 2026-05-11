@@ -208,8 +208,8 @@ def test_apply_series_causality_in_q(phi: QSeries) -> None:
         assert sp.expand(result_orig.coeff(k) - result_perturbed.coeff(k)) == 0
 
 
-def test_apply_series_transcendental_not_supported() -> None:
-    """A sin(u) node in expr raises NotImplementedError (compiler rejects it)."""
+def test_apply_series_sin_of_u_rejected() -> None:
+    """sin(u) is not polynomial in u; compiler raises NotImplementedError."""
     expr = sp.sin(U(X))
     n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
     phi = QSeries([X, X**2], order=1)
@@ -288,6 +288,74 @@ def test_apply_series_u_times_u_prime_matches_cauchy(phi: QSeries) -> None:
     expected = (phi * phi_prime).trunc(phi.order)
     for k in range(phi.order + 1):
         assert sp.expand(result.coeff(k) - expected.coeff(k)) == 0
+
+
+# --- Stage 3d: transcendental + non-polynomial rejection -----------------
+
+
+def test_apply_series_exp_of_u_rejected() -> None:
+    """exp(u) requires formal-series composition; compiler raises."""
+    expr = sp.exp(U(X))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([X, sp.Integer(1)], order=1)
+    with pytest.raises(NotImplementedError):
+        n_op.apply_series(phi)
+
+
+def test_apply_series_cos_of_u_rejected() -> None:
+    """cos(u) requires formal-series composition; compiler raises."""
+    expr = sp.cos(U(X))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([X, sp.Integer(1)], order=1)
+    with pytest.raises(NotImplementedError):
+        n_op.apply_series(phi)
+
+
+def test_apply_series_log_of_u_rejected() -> None:
+    """log(u) requires formal-series composition; compiler raises."""
+    expr = sp.log(U(X))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([X, sp.Integer(1)], order=1)
+    with pytest.raises(NotImplementedError):
+        n_op.apply_series(phi)
+
+
+def test_apply_series_sqrt_of_u_rejected() -> None:
+    """sqrt(u) is Pow(u, 1/2); the compiler only handles non-negative integer powers."""
+    expr = sp.sqrt(U(X))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([sp.Integer(1)], order=0)
+    with pytest.raises(NotImplementedError):
+        n_op.apply_series(phi)
+
+
+def test_apply_series_reciprocal_of_u_rejected() -> None:
+    """1/u is Pow(u, -1); the compiler does not implement series inversion."""
+    expr = sp.Integer(1) / U(X)
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([sp.Integer(1)], order=0)
+    with pytest.raises(NotImplementedError):
+        n_op.apply_series(phi)
+
+
+def test_apply_series_error_message_names_offending_subexpression() -> None:
+    """The NotImplementedError carries the rejected subexpression in its message."""
+    expr = sp.sin(U(X)) + U(X)
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([X], order=0)
+    with pytest.raises(NotImplementedError) as exc_info:
+        n_op.apply_series(phi)
+    assert "sin(u(x))" in str(exc_info.value)
+
+
+def test_apply_series_error_message_names_sympy_type() -> None:
+    """The error message includes the sympy node type for debugging."""
+    expr = sp.exp(U(X))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([sp.Integer(1)], order=0)
+    with pytest.raises(NotImplementedError) as exc_info:
+        n_op.apply_series(phi)
+    assert "exp" in str(exc_info.value)
 
 
 def test_apply_series_derivative_of_non_u_rejected() -> None:

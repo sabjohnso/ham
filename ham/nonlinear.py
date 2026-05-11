@@ -92,9 +92,14 @@ class NonlinearOperator:
             return result
         raise NotImplementedError(
             f"NonlinearOperator.apply_series cannot compile subexpression "
-            f"{node!r} (sympy type {type(node).__name__}). Transcendental "
-            f"dependencies on u (sin u, exp u, log u, ...) are deferred "
-            f"to Stage 3d; raise an issue if a worked example needs one."
+            f"{node!r} (sympy type {type(node).__name__}). The compiler "
+            f"handles polynomial-in-u expressions (and integer-power "
+            f"composites) with x-derivatives of u; other dependencies on "
+            f"u — transcendentals (sin u, exp u, log u, ...), rational "
+            f"powers (sqrt u), reciprocals (1/u) — need formal-series "
+            f"composition and are not yet implemented. Workaround: "
+            f"replace the offending term with a truncated Taylor series "
+            f"in u before constructing the NonlinearOperator."
         )
 
     def _compile_derivative(self, node: sp.Derivative, phi: QSeries) -> QSeries:

@@ -16,10 +16,11 @@ right-hand side to obtain u_m. Both directions live in this module.
                In HAM the deformation BCs are homogeneous (u_0 already
                satisfies the original problem), so the default `value` is 0.
   - `inverter` (optional): a Callable[[Expr], Expr] that solves L[u] = rhs
-               under the declared BCs. When None, `L.invert` raises
-               NotImplementedError; Stage 2c will install a sympy.dsolve
-               default. Hand-coded inverters for canonical operators (such
-               as `antiderivative` below) live alongside this module.
+               under the declared BCs. When None, `L.invert` falls back to
+               a sympy.dsolve-backed default. Hand-coded inverters for
+               canonical operators (such as `antiderivative` below) can be
+               supplied to bypass dsolve when they are faster or more
+               reliable.
 
 Linearity of `action` and consistency of `inverter` with `bcs` are the
 caller's contract; the wrapper does not enforce them. Property tests
@@ -64,13 +65,41 @@ class LinearOperator:
         return s.map_coeffs(self.action)
 
     def invert(self, rhs: sp.Expr) -> sp.Expr:
-        """Solve L[u] = rhs subject to the declared BCs, returning u."""
-        if self.inverter is None:
-            raise NotImplementedError(
-                "No inverter installed. Provide `inverter=...` at construction "
-                "time, or wait for the Stage 2c sympy.dsolve default."
-            )
-        return self.inverter(rhs)
+        """Solve L[u] = rhs subject to the declared BCs, returning u.
+
+        Delegates to `self.inverter` when present, otherwise falls back to
+        a sympy.dsolve-backed default that respects `self.bcs`.
+        """
+        if self.inverter is not None:
+            return self.inverter(rhs)
+        return _dsolve_invert(self, rhs)
+
+
+def _dsolve_invert(operator: "LinearOperator", rhs: sp.Expr) -> sp.Expr:
+    """Default inverter: build the ODE L[u(var)] = rhs and hand it to sympy.dsolve.
+
+    Translates each BoundaryCondition into sympy.dsolve's `ics` format,
+    relying on sympy's symbolic engine to handle the differential equation
+    and initial-condition pinning together.
+    """
+    u = sp.Function("u")
+    u_of_var = u(operator.var)
+    equation = sp.Eq(operator.action(u_of_var), rhs)
+    ics = {_bc_to_ic(u_of_var, operator.var, bc): bc.value for bc in operator.bcs}
+    solution = sp.dsolve(equation, u_of_var, ics=ics)
+    return solution.rhs
+
+
+def _bc_to_ic(u_of_var: sp.Expr, var: sp.Symbol, bc: BoundaryCondition) -> sp.Expr:
+    """Translate a BoundaryCondition into the LHS form sympy.dsolve expects.
+
+    For derivative_order = k, returns `u(var).diff(var, k).subs(var, bc.point)`,
+    which sympy.dsolve recognizes as "u^(k)(point)" in its ics dictionary.
+    """
+    expr = u_of_var
+    for _ in range(bc.derivative_order):
+        expr = sp.diff(expr, var)
+    return expr.subs(var, bc.point)
 
 
 def antiderivative(var: sp.Symbol, t0: sp.Expr = sp.S.Zero) -> Callable[[sp.Expr], sp.Expr]:

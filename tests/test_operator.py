@@ -11,7 +11,6 @@ of known-linear actions (here, d/dx) to verify the wrapper itself does
 not break linearity en route.
 """
 
-import pytest
 import sympy as sp
 from ham.operator import BoundaryCondition, LinearOperator, antiderivative
 from ham.series import QSeries
@@ -90,20 +89,12 @@ def test_apply_series_preserves_linearity(
 
 
 def _canonical_ivp() -> LinearOperator:
-    """L = d/dx with u(0) = 0, inverted by definite integration from 0."""
+    """L = d/dx with u(0) = 0, no inverter — exercises the dsolve default."""
     return LinearOperator(
         var=X,
         action=_diff_x,
         bcs=(BoundaryCondition(point=sp.Integer(0), derivative_order=0),),
-        inverter=antiderivative(X, sp.Integer(0)),
     )
-
-
-def test_invert_without_inverter_raises() -> None:
-    """L.invert with no inverter set is a placeholder until 2c lands the default."""
-    op = LinearOperator(var=X, action=_diff_x)
-    with pytest.raises(NotImplementedError):
-        op.invert(sp.Integer(1))
 
 
 @given(rhs=polynomial_in_x())
@@ -136,3 +127,66 @@ def test_boundary_condition_default_value_is_zero() -> None:
     """BoundaryCondition.value defaults to sympy.Integer(0) (homogeneous HAM case)."""
     bc = BoundaryCondition(point=sp.Integer(0), derivative_order=0)
     assert bc.value == sp.Integer(0)
+
+
+def test_explicit_inverter_overrides_dsolve_default() -> None:
+    """A user-supplied inverter takes precedence over the dsolve default."""
+    calls: list[sp.Expr] = []
+
+    def fake_inverter(rhs: sp.Expr) -> sp.Expr:
+        calls.append(rhs)
+        return sp.Integer(42)
+
+    op = LinearOperator(var=X, action=_diff_x, inverter=fake_inverter)
+    result = op.invert(sp.Integer(7))
+    assert result == sp.Integer(42)
+    assert calls == [sp.Integer(7)]
+
+
+def test_dsolve_default_matches_antiderivative_on_canonical_ivp() -> None:
+    """The dsolve default and the hand-coded antiderivative agree on d/dx, u(0)=0."""
+    rhs = X**3 + sp.Integer(2) * X + sp.Integer(5)
+    op_default = _canonical_ivp()
+    explicit = antiderivative(X, sp.Integer(0))(rhs)
+    assert sp.expand(op_default.invert(rhs) - explicit) == 0
+
+
+def test_dsolve_default_handles_second_order_ivp() -> None:
+    """L = d^2/dx^2 with u(0)=u'(0)=0; invert(x) should give x^3/6."""
+    op = LinearOperator(
+        var=X,
+        action=lambda e: sp.diff(e, X, 2),
+        bcs=(
+            BoundaryCondition(point=sp.Integer(0), derivative_order=0),
+            BoundaryCondition(point=sp.Integer(0), derivative_order=1),
+        ),
+    )
+    assert sp.expand(op.invert(X) - X**3 / sp.Integer(6)) == 0
+
+
+def test_dsolve_default_handles_first_order_linear_ode() -> None:
+    """L = d/dx + I with u(0)=0; invert(exp(x)) should give (exp(x) - exp(-x))/2."""
+    op = LinearOperator(
+        var=X,
+        action=lambda e: sp.diff(e, X) + e,
+        bcs=(BoundaryCondition(point=sp.Integer(0), derivative_order=0),),
+    )
+    rhs = sp.exp(X)
+    expected = (sp.exp(X) - sp.exp(-X)) / sp.Integer(2)
+    assert sp.simplify(op.invert(rhs) - expected) == 0
+
+
+def test_dsolve_default_honors_nonzero_bc_value() -> None:
+    """L = d/dx with u(0)=5, rhs=0; invert should give the constant 5."""
+    op = LinearOperator(
+        var=X,
+        action=_diff_x,
+        bcs=(
+            BoundaryCondition(
+                point=sp.Integer(0),
+                derivative_order=0,
+                value=sp.Integer(5),
+            ),
+        ),
+    )
+    assert op.invert(sp.Integer(0)) == sp.Integer(5)

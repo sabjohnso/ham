@@ -47,7 +47,7 @@ def residual_l2_squared(
 ) -> sp.Expr:
     """L² norm squared of the residual: integral of N[u^{(M)}]^2 over [a, b].
 
-    Returns ∫_a^b (N[u^{(M)}](x))^2 dx as a sympy expression. When
+    Returns `∫_a^b (N[u^{(M)}(x)])^2 dx` as a sympy expression. When
     `hbar_value` is None the result retains ℏ symbolically, which is
     what the optimal-ℏ grid search consumes.
 
@@ -65,7 +65,7 @@ def residual_discrete_sum_of_squares(
     hbar_value: sp.Expr | None,
     samples: Sequence[sp.Expr],
 ) -> sp.Expr:
-    """Discrete L² norm squared of the residual: Σ_i N[u^{(M)}](x_i)^2.
+    """Discrete L² norm squared of the residual: `Σ_i N[u^{(M)}(x_i)]^2`.
 
     Returns the sum of squares evaluated at user-supplied sample points.
     Cheaper and more robust than the L² integral when the residual is

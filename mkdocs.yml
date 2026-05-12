@@ -1,0 +1,104 @@
+site_name: ham
+site_description: The Homotopy Analysis Method in Python — a sympy-backed library for series solutions to nonlinear differential and algebraic equations.
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - toc.follow
+    - content.code.copy
+    - content.code.annotate
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            heading_level: 2
+            docstring_section_style: spacy
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - Home: index.md
+  - Tutorial: tutorial.md
+  - Concepts:
+      - concepts/index.md
+      - The homotopy equation: concepts/homotopy-equation.md
+      - The deformation chain: concepts/deformation-chain.md
+      - Convergence: concepts/convergence.md
+      - Padé acceleration: concepts/pade-acceleration.md
+  - Worked examples:
+      - examples/index.md
+      - Quadratic drag: examples/quadratic-drag.md
+      - Logistic equation: examples/logistic.md
+  - API reference:
+      - api/index.md
+      - ham.series: api/series.md
+      - ham.operator: api/operator.md
+      - ham.nonlinear: api/nonlinear.md
+      - ham.deformation: api/deformation.md
+      - ham.solver: api/solver.md
+      - ham.diagnostics: api/diagnostics.md
+      - ham.pade: api/pade.md
+  - Design notes:
+      - design/index.md
+      - Tenets: design/tenets.md
+      - Stage history: design/stages.md

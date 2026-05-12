@@ -40,13 +40,17 @@ class NonlinearOperator:
     indep: sp.Symbol
 
     def apply_scalar(self, u_concrete: sp.Expr) -> sp.Expr:
-        """Substitute u(indep) -> u_concrete and evaluate derivatives.
+        """Substitute u(indep) -> u_concrete and evaluate derivatives / integrals.
 
-        Uses `sp.Lambda(indep, u_concrete)` as the substitution target so
-        sympy propagates the substitution through any `Derivative` nodes
-        that appear in `expr`, then `.doit()` evaluates them.
+        Uses `expr.replace(dependent, Lambda(indep, u_concrete))` rather than
+        `.subs`. The two produce identical results for Derivative subnodes,
+        but `.subs` fails on `Integral` subnodes with the obscure sympy
+        error "TypeError: 'property' object is not iterable" — `.replace`
+        walks the tree more carefully and handles the Integral case
+        correctly. `.doit()` then evaluates any Derivative / Integral
+        subnodes that emerged from the substitution.
         """
-        substituted = self.expr.subs(self.dependent, sp.Lambda(self.indep, u_concrete))
+        substituted = self.expr.replace(self.dependent, sp.Lambda(self.indep, u_concrete))
         return substituted.doit()
 
     def apply_series(self, phi: QSeries) -> QSeries:
@@ -68,11 +72,16 @@ class NonlinearOperator:
     def _compile(self, node: sp.Expr, phi: QSeries) -> QSeries:
         """Compile a sympy node into a QSeries against phi (recursive)."""
         if not node.has(self.dependent):
-            return QSeries.constant(node, order=phi.order)
+            # `.doit()` evaluates any symbolic Integral / Derivative subnodes
+            # in the u-free path so they reach the QSeries as concrete values
+            # rather than as unevaluated sympy objects in coefficient slot 0.
+            return QSeries.constant(node.doit(), order=phi.order)
         if node == self.dependent(self.indep):
             return phi
         if isinstance(node, sp.Derivative):
             return self._compile_derivative(node, phi)
+        if isinstance(node, sp.Integral):
+            return self._compile_integral(node, phi)
         if isinstance(node, sp.Add):
             result = QSeries.zero(order=phi.order)
             for arg in node.args:
@@ -123,3 +132,49 @@ class NonlinearOperator:
             )
         k = int(node.variable_count[0][1])
         return phi.map_coeffs(lambda c: sp.diff(c, self.indep, k))
+
+    def _compile_integral(self, node: sp.Integral, phi: QSeries) -> QSeries:
+        """Compile an `Integral(integrand, (dummy, 0, indep))` node into
+        coefficient-wise integration on the integrand's compiled QSeries.
+
+        Supports the canonical Volterra form: a single-variable definite
+        integral from 0 to `indep` whose integrand depends on the dummy
+        only through `dependent(dummy)` (and its derivatives in the dummy).
+        Other shapes — multi-variable integrals, lower bounds other than 0,
+        upper bounds other than `indep`, or integrands with explicit
+        non-`dependent` dummy dependence — raise NotImplementedError.
+
+        Algorithm: substitute `dummy -> indep` in the integrand (this is
+        sound when the dummy appears only inside `dependent(dummy)` calls),
+        recursively compile the resulting expression to obtain the
+        QSeries `f(phi)`, then `f(phi).map_coeffs(integrate from 0 to indep)`.
+        """
+        if len(node.limits) != 1:
+            raise NotImplementedError(
+                f"NonlinearOperator.apply_series only handles single-variable "
+                f"integrals; got {node!r} with {len(node.limits)} integration "
+                f"variables."
+            )
+        limit = node.limits[0]
+        if len(limit) != 3:
+            raise NotImplementedError(
+                f"NonlinearOperator.apply_series requires definite integrals "
+                f"with both lower and upper bounds; got {node!r}."
+            )
+        dummy, lower, upper = limit
+        if lower != sp.Integer(0):
+            raise NotImplementedError(
+                f"NonlinearOperator.apply_series only handles integrals with "
+                f"lower bound 0; got {node!r} with lower bound {lower}."
+            )
+        if upper != self.indep:
+            raise NotImplementedError(
+                f"NonlinearOperator.apply_series only handles integrals with "
+                f"upper bound = {self.indep!r} (the independent variable); "
+                f"got {node!r} with upper bound {upper}."
+            )
+        integrand_at_indep = node.function.subs(dummy, self.indep)
+        integrand_qseries = self._compile(integrand_at_indep, phi)
+        return integrand_qseries.map_coeffs(
+            lambda c: sp.integrate(c, (self.indep, sp.Integer(0), self.indep))
+        )

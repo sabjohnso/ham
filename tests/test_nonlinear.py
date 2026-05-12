@@ -371,3 +371,95 @@ def test_apply_series_derivative_of_non_u_rejected() -> None:
     phi = QSeries([X, sp.Integer(1)], order=1)
     with pytest.raises(NotImplementedError):
         n_op.apply_series(phi)
+
+
+# --- Stage 9a: apply_series with definite integrals 0..indep --------------
+
+
+def test_apply_series_integral_of_u_only() -> None:
+    """N(u) = integral 0..t u(s) ds: each q-coefficient gets integrated in x.
+
+    phi = QSeries([1, x, x^2], 2)  ⇒
+    integral coeffs: [int_0^t 1 dt' = t, int_0^t t' dt' = t^2/2, int_0^t t'^2 dt' = t^3/3]
+    """
+    s = sp.Symbol("s")
+    expr = sp.Integral(U(s), (s, 0, X))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([sp.Integer(1), X, X**2], order=2)
+    result = n_op.apply_series(phi)
+    assert sp.expand(result.coeff(0) - X) == 0
+    assert sp.expand(result.coeff(1) - X**2 / sp.Integer(2)) == 0
+    assert sp.expand(result.coeff(2) - X**3 / sp.Integer(3)) == 0
+
+
+def test_apply_series_integral_of_u_squared() -> None:
+    """N(u) = integral 0..t u(s)^2 ds: integrand compiled to Cauchy product first."""
+    s = sp.Symbol("s")
+    expr = sp.Integral(U(s) ** 2, (s, 0, X))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([sp.Integer(1), X], order=1)
+    result = n_op.apply_series(phi)
+    # phi^2 (eager-truncated to order 1): [q^0] = 1; [q^1] = 2*1*x = 2x
+    # Integrate: [q^0] = int_0^t 1 dt' = t; [q^1] = int_0^t 2 t' dt' = t^2
+    assert sp.expand(result.coeff(0) - X) == 0
+    assert sp.expand(result.coeff(1) - X**2) == 0
+
+
+def test_apply_series_outer_u_times_integral() -> None:
+    """N(u) = u(t) * integral 0..t u(s) ds: outer u multiplies the integral QSeries.
+
+    phi = QSeries([1, 2], 1)
+    int phi = QSeries([t, 2t], 1)
+    phi * (int phi) (eager-trunc to order 1):
+      [q^0]: 1*t = t
+      [q^1]: 1*2t + 2*t = 4t
+    """
+    s = sp.Symbol("s")
+    expr = U(X) * sp.Integral(U(s), (s, 0, X))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([sp.Integer(1), sp.Integer(2)], order=1)
+    result = n_op.apply_series(phi)
+    assert sp.expand(result.coeff(0) - X) == 0
+    assert sp.expand(result.coeff(1) - 4 * X) == 0
+
+
+def test_apply_series_integral_constant_compatibility() -> None:
+    """For a u-free integrand the integral is just sp.integrate at coeff(0)."""
+    s = sp.Symbol("s")
+    expr = sp.Integral(s, (s, 0, X))  # integral 0..t s ds = t^2/2
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([X, X**2], order=1)
+    result = n_op.apply_series(phi)
+    assert sp.expand(result.coeff(0) - X**2 / sp.Integer(2)) == 0
+    assert result.coeff(1) == 0
+
+
+def test_apply_series_integral_rejects_non_zero_lower_bound() -> None:
+    """Only integrals starting at 0 are supported."""
+    s = sp.Symbol("s")
+    expr = sp.Integral(U(s), (s, sp.Integer(1), X))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([sp.Integer(1)], order=0)
+    with pytest.raises(NotImplementedError, match="0"):
+        n_op.apply_series(phi)
+
+
+def test_apply_series_integral_rejects_upper_bound_not_indep() -> None:
+    """Only integrals ending at the indep variable are supported."""
+    s = sp.Symbol("s")
+    expr = sp.Integral(U(s), (s, 0, sp.Integer(1)))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([sp.Integer(1)], order=0)
+    with pytest.raises(NotImplementedError):
+        n_op.apply_series(phi)
+
+
+def test_apply_series_double_integral_rejected() -> None:
+    """Nested integrals or multi-variable integrals raise NotImplementedError."""
+    s1 = sp.Symbol("s1")
+    s2 = sp.Symbol("s2")
+    expr = sp.Integral(U(s1), (s1, 0, s2), (s2, 0, X))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([sp.Integer(1)], order=0)
+    with pytest.raises(NotImplementedError):
+        n_op.apply_series(phi)

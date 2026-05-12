@@ -90,6 +90,7 @@ nav:
       - Quadratic drag: examples/quadratic-drag.md
       - Logistic equation: examples/logistic.md
       - Volterra population model: examples/volterra.md
+      - Blasius boundary-layer: examples/blasius.md
   - API reference:
       - api/index.md
       - ham.series: api/series.md

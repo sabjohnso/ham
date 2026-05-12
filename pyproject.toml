@@ -27,7 +27,7 @@ pre-commit = "^4.6.0"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["ham", "tests"]
+src = ["ham", "tests", "examples"]
 
 [tool.ruff.lint]
 select = [
@@ -49,7 +49,7 @@ docstring-code-format = true
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["ham", "tests"]
+files = ["ham", "tests", "examples"]
 
 [[tool.mypy.overrides]]
 module = ["sympy.*"]

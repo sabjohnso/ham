@@ -105,6 +105,8 @@ from ham.nonlinear import NonlinearOperator
 from ham.operator import BoundaryCondition, LinearOperator
 from ham.solver import HamSolution, solve
 
+from examples.blasius_inverter import make_blasius_inverter
+
 ETA = sp.Symbol("eta", positive=True)
 F = sp.Function("f")
 HBAR = sp.Symbol("hbar")
@@ -113,19 +115,27 @@ HOWARTH_F_DOUBLE_PRIME_AT_ZERO = sp.Rational(4696, 10000)
 _DEFAULT_TOLERANCE = sp.Rational(1, 50)
 _DEFAULT_ALPHA = sp.Integer(1)
 
+# Module-level inverter so the lru_cache fills once and is shared across
+# every solve_to() call. Stage 13a's closed-form basis-aware inverter
+# replaces the per-step sympy.dsolve call with a decompose-and-lookup
+# strategy; M = 3 drops from ~12 s to ~3 s, M = 4 from minutes to ~5 s.
+_BLASIUS_INVERTER = make_blasius_inverter(ETA, ALPHA)
+
 
 def _blasius_exponential_inverter(rhs: sp.Expr) -> sp.Expr:
-    """Custom inverter for L = d^3/dη^3 - alpha^2·d/dη with Blasius BCs.
+    """Reference dsolve-based inverter from Stage 11.
 
-    sympy.dsolve cannot symbolically apply the asymptotic BC f'(∞) = 0
-    when the dsolve result contains growing-exp kernel components.
-    The workaround: solve with only the two point BCs at η = 0, then
-    zero out any free constants in the result. For this L the free
-    constant always parametrises the growing-exp branch e^(alpha η), so
-    zeroing it correctly enforces f'(∞) = 0.
+    The example no longer calls this directly — `build_problem()` plugs
+    in the Stage 13a closed-form `_BLASIUS_INVERTER` instead, which is
+    substantially faster. This function is kept as a reference
+    implementation so the equivalence tests in
+    `tests/examples/test_blasius_inverter.py` can pin closed-form ==
+    dsolve on a sample RHS.
 
-    Verified algebraically in the example docstring; the resulting
-    u_1 satisfies L[u_1] = ℏ·N[u_0] and all three BCs exactly.
+    Algorithm: solve with only the two point BCs at η = 0, then zero
+    out any free constants in the dsolve result. For this L the free
+    constant always parametrises the growing-exp kernel branch
+    e^(αη), so zeroing it enforces the asymptotic BC f'(∞) = 0.
     """
     u_func = sp.Function("_u_blasius_exp")
     u = u_func(ETA)
@@ -155,7 +165,7 @@ def build_problem() -> HamProblem:
                 BoundaryCondition(point=sp.Integer(0), derivative_order=1),
                 BoundaryCondition(point=sp.oo, derivative_order=1),
             ),
-            inverter=_blasius_exponential_inverter,
+            inverter=_BLASIUS_INVERTER,
         ),
         N=NonlinearOperator(
             expr=n_expr,

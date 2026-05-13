@@ -94,35 +94,39 @@ problem.
 
 The Stage 12 library extension exposes \(\alpha\) as a sympy symbol
 and provides a two-parameter grid search via `optimal_parameters`.
-The example's `analyze()` sweeps the (ℏ, α) plane and reports the
-joint optimum:
+Stage 13's closed-form basis-aware inverter drops the per-step
+solve time enough to make M = 3 (and higher) practical. The
+example's `analyze()` sweeps the (ℏ, α) plane and reports the joint
+optimum:
 
 ```text
 Best (ℏ, α) found by grid search at each working order:
   M  best ℏ   best α    f''(0)   |error|   gate
   1   -4/5    7/10     +0.46762  0.00198   True
   2   -1/2    7/10     +0.47003  0.00043   True
+  3   -1      13/10    +0.46976  0.00016   True
 ```
 
-Tuning \(\alpha\) alongside \(\hbar\) is a **substantial**
-improvement over the Stage 11 single-parameter search with α=1:
+Tuning \(\alpha\) alongside \(\hbar\) and raising M with the closed-
+form inverter compound:
 
 | Strategy | M | f''(0) | |error| | vs Howarth |
 | --- | ---: | ---: | ---: | --- |
 | Polynomial basis (Stage 10) | 5 | 0.4178 | 0.0518 | 11.0% off |
 | Exp basis, α=1 only (Stage 11) | 2 | 0.4644 | 0.0052 | 1.1% off |
-| **Exp basis, (ℏ, α) jointly (Stage 12)** | **2** | **0.4700** | **0.00043** | **0.09% off** |
+| Exp basis, (ℏ, α) jointly (Stage 12) | 2 | 0.4700 | 0.00043 | 0.09% off |
+| **Exp basis, 2D + closed-form inverter (Stage 13)** | **3** | **0.4698** | **0.00016** | **0.03% off** |
 
-Two parameters and two HAM iterations beat the polynomial basis at
-M=5 by more than two orders of magnitude. This is Liao's Rule 1
-(solution expression) **plus** a free parameter that the library now
-fully exposes — choose the right base and tune the right knobs, and
-the convergence rate transforms.
+Three HAM iterations of the closed-form inverter beat the
+polynomial basis at M=5 by more than two orders of magnitude. This
+is Liao's Rule 1 (solution expression) **plus** two free parameters
+**plus** a basis-aware closed-form inverter — choose the right base,
+tune the right knobs, and exploit the basis structure for speed.
 
 The regression test
 `test_two_parameter_beats_polynomial_basis_at_higher_order` pins
-this comparison: exponential-basis with the joint optimum at M=2 is
-asserted at least 50x better than polynomial-basis at M=5.
+this comparison: exponential-basis with the joint optimum at M=3
+is asserted at least 100x better than polynomial-basis at M=5.
 
 ## Why \((\hbar, \alpha)\) shifts with order
 
@@ -131,7 +135,8 @@ parameters drift as more HAM terms are summed:
 
 \[
 (\hbar^*, \alpha^*)(M=1) = (-4/5, 7/10), \quad
-(\hbar^*, \alpha^*)(M=2) = (-1/2, 7/10).
+(\hbar^*, \alpha^*)(M=2) = (-1/2, 7/10), \quad
+(\hbar^*, \alpha^*)(M=3) = (-1, 13/10).
 \]
 
 This is normal HAM behaviour. The partial sum is an approximation of
@@ -190,13 +195,64 @@ poetry run python examples/blasius_exponential.py
 prints \(f''(0)\), absolute error, and gate result at the best
 \(\hbar\) for each \(M\) from 1 to 4. Roughly 10 seconds total.
 
+## The closed-form basis-aware inverter (Stage 13)
+
+The Stage 11 inverter called `sympy.dsolve` per HAM step on a
+progressively complex RHS; with \(\alpha\) symbolic (Stage 12),
+M = 3 took ~12 s and M = 4 was effectively prohibitive.
+
+**Stage 13's closed-form inverter** (in `examples/blasius_inverter.py`)
+exploits the basis structure of HAM Blasius:
+
+1. **Every HAM RHS lives in the basis** \(\{\eta^j \, e^{-k\alpha\eta}\}\)
+   for non-negative integers \(j, k\). This is true by construction:
+   \(u_0\) has terms in \(\{1, \eta, e^{-\alpha\eta}\}\), and the
+   deformation chain preserves the basis under polynomial-N
+   composition.
+2. **Each basis element's L\(^{-1}\) is cached** under
+   `functools.cache(j, k)`. The first call solves
+   \(L[u] = \eta^j e^{-k\alpha\eta}\) via `sympy.dsolve` on a trivial
+   single-term RHS (fast even with symbolic \(\alpha\)); subsequent
+   calls hit the cache.
+3. **An arbitrary RHS is decomposed** via `sp.expand` + walking
+   `Add.make_args`, with each term parsed into \((c_i, j_i, k_i)\).
+4. **The inverse is assembled** as
+   \(\sum c_i \cdot L^{-1}(\eta^{j_i} e^{-k_i \alpha \eta})\).
+
+Each cached basis element already satisfies the three Blasius BCs by
+construction (the Stage 11 zero-free-constants trick is built into
+the cached element), so the assembled sum satisfies them too — no
+per-step BC correction is needed.
+
+Results compared to the Stage 11 / 12 dsolve-based path:
+
+| Step | Stage 11 dsolve | Stage 13 closed-form |
+| --- | ---: | ---: |
+| M = 2 solve | ≈ 3 s | ≈ 1.7 s |
+| M = 3 solve | ≈ 12 s | ≈ 3.1 s |
+| M = 4 solve | minutes | ≈ 5.3 s |
+
+The example now sets up the inverter once at module import time:
+
+```python
+from examples.blasius_inverter import make_blasius_inverter
+
+_BLASIUS_INVERTER = make_blasius_inverter(ETA, ALPHA)
+```
+
+`build_problem()` plugs `_BLASIUS_INVERTER` into
+`LinearOperator(inverter=...)`. The Stage 11 `_blasius_exponential_inverter`
+remains in the example as a reference implementation (and is what
+`tests/examples/test_blasius_inverter.py` compares the closed-form
+result against on a sample RHS).
+
 ## What remains scope-deferred
 
-- **Higher-order solves.** Each HAM step calls sympy.dsolve on a
-  progressively more complex RHS with symbolic \(\alpha\); M = 2 takes
-  ≈ 3 s, M = 3 takes ≈ 12 s. Liao reports \(f''(0) = 0.469600\)
-  accurate to 6 decimals at M ≈ 30; reaching that with our library
-  would benefit from a faster custom inverter that decomposes the RHS
-  over the basis \(\{\eta^j e^{-k\alpha\eta}\}\) and applies a
-  closed-form L^{-1} formula per basis element. The current dsolve-
-  backed inverter is correct but generic.
+- **Very high-order solves.** Liao reports \(f''(0) = 0.469600\)
+  accurate to 6 decimals at M ≈ 30; reaching that with the
+  closed-form inverter is now feasible in principle but each
+  additional order still costs more wall-clock time as the
+  symbolic expressions grow. A further optimisation would be to
+  represent the coefficients in a sparse dictionary keyed by
+  \((j, k)\) rather than a single sympy expression — bypassing
+  sympy's tree-traversal cost in `as_independent` and `expand`.

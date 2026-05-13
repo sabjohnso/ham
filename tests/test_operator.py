@@ -190,3 +190,28 @@ def test_dsolve_default_honors_nonzero_bc_value() -> None:
         ),
     )
     assert op.invert(sp.Integer(0)) == sp.Integer(5)
+
+
+def test_dsolve_default_accepts_asymptotic_bc_at_infinity() -> None:
+    """BoundaryCondition.point may be sp.oo; the dsolve inverter handles it.
+
+    For the auxiliary operator L = d^3/dx^3 - d/dx with the three BCs
+    u(0) = 0, u'(0) = 0, u'(∞) = 0, the homogeneous solution space is
+    spanned by {1, exp(x), exp(-x)} with the asymptotic BC ruling out
+    exp(x). Inverting against rhs = exp(-2x) gives the closed-form
+    -1/6 + exp(-x)/3 - exp(-2x)/6, verifiable by direct substitution
+    (and by Liao-style exponential-basis HAM, the use case this
+    capability enables).
+    """
+    op = LinearOperator(
+        var=X,
+        action=lambda e: sp.diff(e, X, 3) - sp.diff(e, X),
+        bcs=(
+            BoundaryCondition(point=sp.Integer(0), derivative_order=0),
+            BoundaryCondition(point=sp.Integer(0), derivative_order=1),
+            BoundaryCondition(point=sp.oo, derivative_order=1),
+        ),
+    )
+    rhs = sp.exp(-2 * X)
+    expected = -sp.Rational(1, 6) + sp.exp(-X) / sp.Integer(3) - sp.exp(-2 * X) / sp.Integer(6)
+    assert sp.simplify(op.invert(rhs) - expected) == 0

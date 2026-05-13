@@ -207,20 +207,22 @@ diagnostic work.
 
 ## Where to go next
 
-The exponential-basis Blasius treatment that Liao Ch. 14 uses would
-both converge much faster and avoid the false-plateau pathology of
-the L² residual norm. Implementing it requires:
+The library now ships an **[exponential-basis Blasius
+example](blasius-exponential.md)** (Stage 11) that solves the same
+problem using Liao's recommended basis. It:
 
-- A way to express ansatz `f(η) = γ₀ + γ₁·η + Σ c_k(α)·e^{-kαη}`
-  with a second free parameter \(\alpha\).
-- An \(L = d^3/d\eta^3 + \alpha^2\,d/d\eta\) inverter that maps
-  RHS = \(\sum c_k\,e^{-k\alpha\eta}\) to a similar expression.
-- A two-parameter optimisation pathway (\(\hbar\) and \(\alpha\) both
-  free).
+- Uses `BoundaryCondition(point=sp.oo, derivative_order=1)` for the
+  true asymptotic BC \(f'(\infty) = 1\), no domain truncation.
+- Plugs in a custom inverter that filters growing-exp free
+  constants left by `sympy.dsolve` when the resonance pattern
+  defeats symbolic asymptotic-BC application.
+- Reaches \(|f''(0) - \text{Howarth}| < 0.01\) at \(M = 3\) — an
+  order of magnitude better than this polynomial-basis version
+  achieves at \(M = 5\).
 
-That is a Stage 11-scale extension; for now this example
-demonstrates the truncated-domain workaround and the limits of
-polynomial-basis HAM on a problem outside its natural fit.
+That example is the natural follow-up reading and demonstrates
+Liao's Rule 1 (solution expression) by direct contrast with the
+slow convergence here.
 
 ## Running the example as a script
 

@@ -11,39 +11,44 @@ poetry run python examples/quadratic_drag.py
 poetry run python examples/logistic.py
 poetry run python examples/volterra.py
 poetry run python examples/blasius.py
+poetry run python examples/blasius_exponential.py
 ```
 
 The narrative pages below walk through each example end-to-end:
 problem statement, HAM setup, deformation chain, diagnostics, the
 interesting observations that fell out of the run.
 
-## The four shipped examples
+## The five shipped examples
 
 | Example | ODE | Reference | Highlight |
 | --- | --- | --- | --- |
 | [Quadratic drag](quadratic-drag.md) | \(v'(t) = 1 - v(t)^2\), \(v(0) = 0\) | \(v(t) = \tanh(t)\) (closed form) | At order 7 the L²-optimal \(\hbar\) is \(-\tfrac{1}{2}\), not \(-1\) — the adaptive-ℏ advantage at work. |
 | [Logistic](logistic.md) | \(u'(t) = u(t)(1 - u(t))\), \(u(0) = \tfrac{1}{2}\) | \(u(t) = 1/(1 + e^{-t})\) (closed form) | First example with a *non-zero initial guess* (\(u_0 = 1/2\)); the sigmoid Taylor converges fast enough that \(\hbar = -1\) cleanly dominates. |
 | [Volterra](volterra.md) | \(u'(t) = \kappa\,u\,(1 - u - \int_0^t u\,d\tau)\), \(u(0) = \alpha\) | Taylor recurrence (no closed form) | First example with an **integro-differential** \(N\); HAM polynomial degree grows by 2 per step; residual non-monotone in \(M\) (Liao's theorem only guarantees limit convergence). |
-| [Blasius](blasius.md) | \(f'''(\eta) + \tfrac{1}{2} f(\eta) f''(\eta) = 0\), \(f(0) = f'(0) = 0\), \(f'(\eta_{\max}) = 1\) | Howarth's \(f''(0) \approx 0.4696\) | First example where \(\hbar = -1\) **diverges** and the L² residual norm has a **false plateau**; the per-problem validity gate compares \(f''(0)\) to the reference, not residual-to-zero. |
+| [Blasius (polynomial)](blasius.md) | \(f'''(\eta) + \tfrac{1}{2} f(\eta) f''(\eta) = 0\), \(f(0) = f'(0) = 0\), \(f'(\eta_{\max}) = 1\) | Howarth's \(f''(0) \approx 0.4696\) | First example where \(\hbar = -1\) **diverges** and the L² residual norm has a **false plateau**; the per-problem validity gate compares \(f''(0)\) to the reference, not residual-to-zero. Truncated domain. |
+| [Blasius (exponential)](blasius-exponential.md) | Same as above, but with **true** \(f'(\infty) = 1\) | Howarth's \(f''(0) \approx 0.4696\) | Liao's recommended basis. Asymptotic BC via `BoundaryCondition(point=sp.oo)`, custom inverter filtering growing-exp branches, second free parameter \(\alpha\). Converges an order of magnitude faster than polynomial basis at lower M. |
 
-The four examples surface different regimes: a closed-form
-hyperbolic-tangent benchmark, an initial-guess-with-non-zero-value
-case, an integro-differential problem requiring the Stage 9a
-`Integral` branch of the nonlinear compiler, and a higher-order BVP
-where the convergence-control parameter must be tuned away from
-\(\hbar = -1\) to recover the solution.
+The five examples surface different regimes:
+
+- A **closed-form hyperbolic-tangent** benchmark.
+- An **initial-guess-with-non-zero-value** case.
+- An **integro-differential** problem requiring the Stage 9a
+  `Integral` branch of the nonlinear compiler.
+- A **higher-order BVP** where the convergence-control parameter
+  must be tuned away from \(\hbar = -1\) to recover the solution.
+- An **exponential-basis** treatment of the same higher-order BVP
+  using a custom inverter and Liao's Rule 1 (solution expression).
 
 ## What remains scope-deferred
 
-- **Exponential-basis Blasius.** Liao's canonical
-  *Beyond Perturbation* Ch. 14 treatment uses
-  \(f(\eta) \approx \gamma_0 + \gamma_1 \eta + \sum c_k(\alpha) e^{-k\alpha\eta}\)
-  with a second free parameter \(\alpha\). Implementing this requires
-  an exponential-basis-aware `LinearOperator` and a two-parameter
-  optimisation pathway, which is a Stage-11-scale extension rather
-  than another worked example.
-- **True asymptotic boundary conditions.** The Blasius example uses
-  a truncated finite \(\eta_{\max} = 10\). A library-level
-  `BoundaryCondition` extension to support genuine
-  \(f'(\infty) = 1\) (and the corresponding inverter) would enable
-  Liao's exponential-basis treatment cleanly.
+- **Two-parameter \((\hbar, \alpha)\) optimisation.** Liao tunes both
+  the convergence-control parameter \(\hbar\) and the basis decay
+  rate \(\alpha\); the library's `optimal_hbar` is single-parameter.
+  Extending to \(n\)-parameter grid search is a small generalisation
+  that has not yet been added.
+- **Closed-form basis-aware inverter for the exponential-basis L.**
+  The current Blasius-exponential example uses sympy.dsolve at each
+  HAM step; a faster inverter that decomposes the RHS over
+  \(\{\eta^j e^{-k\alpha\eta}\}\) and applies a closed-form L^{-1}
+  per basis element would scale to the M ≈ 30 needed to reach
+  Liao's six-decimal accuracy on \(f''(0)\).

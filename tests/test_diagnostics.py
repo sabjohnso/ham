@@ -18,6 +18,7 @@ from ham.deformation import HamProblem
 from ham.diagnostics import (
     hbar_curve_at,
     optimal_hbar,
+    optimal_parameters,
     residual,
     residual_discrete_sum_of_squares,
     residual_l2_squared,
@@ -312,3 +313,111 @@ def test_optimal_hbar_via_discrete_norm_picks_neg_one_for_exp_problem() -> None:
 def _l2_unit_interval_norm(s, h):  # type: ignore[no-untyped-def]
     """Closure-free norm bound to interval [0, 1] for re-use across tests."""
     return residual_l2_squared(s, h, (sp.Integer(0), sp.Integer(1)))
+
+
+# --- substitutions kwarg --------------------------------------------------
+
+
+def test_residual_substitutions_kwarg_matches_hbar_value_shortcut() -> None:
+    """`residual(sol, substitutions={hbar: v})` == `residual(sol, hbar_value=v)`."""
+    problem = _exp_problem()
+    sol = solve(problem, order=3)
+    v = sp.Integer(-1)
+    via_shortcut = residual(sol, hbar_value=v)
+    via_subs = residual(sol, substitutions={HBAR: v})
+    assert sp.simplify(via_shortcut - via_subs) == 0
+
+
+def test_residual_rejects_both_hbar_value_and_substitutions() -> None:
+    """Supplying both shortcuts is ambiguous and must raise."""
+    problem = _exp_problem()
+    sol = solve(problem, order=2)
+    with pytest.raises(ValueError, match="not both"):
+        residual(sol, hbar_value=sp.Integer(-1), substitutions={HBAR: sp.Integer(-1)})
+
+
+def test_residual_l2_squared_substitutions_kwarg() -> None:
+    """L² squared accepts a substitutions mapping and substitutes before integrating."""
+    problem = _exp_problem()
+    sol = solve(problem, order=4)
+    interval = (sp.Integer(0), sp.Integer(1))
+    via_shortcut = residual_l2_squared(sol, sp.Integer(-1), interval)
+    via_subs = residual_l2_squared(sol, None, interval, substitutions={HBAR: sp.Integer(-1)})
+    assert sp.simplify(via_shortcut - via_subs) == 0
+
+
+def test_residual_discrete_substitutions_kwarg() -> None:
+    """Discrete sum-of-squares accepts a substitutions mapping."""
+    problem = _exp_problem()
+    sol = solve(problem, order=3)
+    samples = [sp.Rational(1, 2), sp.Integer(1)]
+    via_shortcut = residual_discrete_sum_of_squares(sol, sp.Integer(-1), samples)
+    via_subs = residual_discrete_sum_of_squares(
+        sol, None, samples, substitutions={HBAR: sp.Integer(-1)}
+    )
+    assert sp.simplify(via_shortcut - via_subs) == 0
+
+
+def test_hbar_curve_substitutions_kwarg_substitutes_other_symbols() -> None:
+    """`hbar_curve_at(sol, x*, substitutions={...})` substitutes the named symbols."""
+    problem = _exp_problem()
+    sol = solve(problem, order=3)
+    curve_full = hbar_curve_at(sol, sp.Integer(1))
+    curve_subbed = hbar_curve_at(sol, sp.Integer(1), substitutions={HBAR: sp.Integer(-1)})
+    assert HBAR in curve_full.free_symbols
+    assert HBAR not in curve_subbed.free_symbols
+    assert sp.simplify(curve_full.subs(HBAR, sp.Integer(-1)) - curve_subbed) == 0
+
+
+# --- optimal_parameters ---------------------------------------------------
+
+
+def test_optimal_parameters_rejects_empty_grid() -> None:
+    """An empty parameter grid has no minimum; surface explicitly."""
+    problem = _exp_problem()
+    sol = solve(problem, order=2)
+
+    def norm(s, subs):  # type: ignore[no-untyped-def]
+        return residual_l2_squared(s, None, (sp.Integer(0), sp.Integer(1)), substitutions=subs)
+
+    with pytest.raises(ValueError, match="non-empty"):
+        optimal_parameters(sol, [], norm)
+
+
+def test_optimal_parameters_matches_optimal_hbar_on_single_symbol_grid() -> None:
+    """Parity: optimal_parameters with a single-symbol grid agrees with optimal_hbar."""
+    problem = _exp_problem()
+    sol = solve(problem, order=4)
+    hbar_grid = [sp.Integer(0), sp.Integer(-1), sp.Rational(-1, 2)]
+    parameter_grid = [{HBAR: h} for h in hbar_grid]
+
+    def norm_hbar(s, h):  # type: ignore[no-untyped-def]
+        return residual_l2_squared(s, h, (sp.Integer(0), sp.Integer(1)))
+
+    def norm_subs(s, subs):  # type: ignore[no-untyped-def]
+        return residual_l2_squared(s, None, (sp.Integer(0), sp.Integer(1)), substitutions=subs)
+
+    via_hbar = optimal_hbar(sol, hbar_grid, norm_hbar)
+    via_params = optimal_parameters(sol, parameter_grid, norm_subs)
+    assert via_params[HBAR] == via_hbar
+
+
+def test_optimal_parameters_returns_grid_minimum_on_two_symbol_norm() -> None:
+    """Two-symbol smoke test: optimal_parameters finds the argmin on a 2D grid.
+
+    Use a synthetic norm `(hbar + 1)^2 + (alpha - 2)^2` whose minimum on
+    integer points is (-1, 2). Grid must contain that point.
+    """
+    alpha_sym = sp.Symbol("alpha")
+    problem = _exp_problem()
+    sol = solve(problem, order=1)
+
+    def norm(s, subs):  # type: ignore[no-untyped-def]
+        h = subs[HBAR]
+        a = subs[alpha_sym]
+        return (h + 1) ** 2 + (a - 2) ** 2
+
+    grid = [{HBAR: sp.Integer(h), alpha_sym: sp.Integer(a)} for h in (-2, -1, 0) for a in (1, 2, 3)]
+    best = optimal_parameters(sol, grid, norm)
+    assert best[HBAR] == sp.Integer(-1)
+    assert best[alpha_sym] == sp.Integer(2)

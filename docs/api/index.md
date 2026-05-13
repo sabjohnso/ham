@@ -26,7 +26,7 @@ the dependency order is bottom-up.
 
 | Module | Responsibility | Headline surface |
 | --- | --- | --- |
-| [`ham.diagnostics`](diagnostics.md) | Residual, two flavors of L² norm, Liao's ℏ-curve, and grid-search optimal-ℏ. Pure functional core — no plotting, no I/O. | `residual`, `residual_l2_squared`, `residual_discrete_sum_of_squares`, `hbar_curve_at`, `optimal_hbar` |
+| [`ham.diagnostics`](diagnostics.md) | Residual, two flavors of L² norm, Liao's ℏ-curve, and grid-search parameter optimisation (single- and multi-parameter). Pure functional core — no plotting, no I/O. | `residual`, `residual_l2_squared`, `residual_discrete_sum_of_squares`, `hbar_curve_at`, `optimal_hbar`, `optimal_parameters` |
 | [`ham.pade`](pade.md) | Homotopy-Padé acceleration of the partial sum in \(q\), evaluated at \(q = 1\). | `homotopy_pade` |
 
 ## What you won't find here

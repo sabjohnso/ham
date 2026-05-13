@@ -40,9 +40,13 @@ demonstrates four properties that none of the earlier examples does:
 4. **A second free parameter** \(\alpha\) alongside \(\hbar\). The
    `HamProblem` data type carries only one named convergence
    parameter (`hbar`), but additional sympy symbols ride through
-   the deformation chain naturally. Two-parameter optimisation is
-   not in `optimal_hbar`; for this example we pick \(\alpha = 1\)
-   and tune only \(\hbar\).
+   the deformation chain naturally. The example keeps \(\alpha\) as a
+   sympy symbol through the entire HAM solve; the Stage 12 library
+   extension
+   [`ham.diagnostics.optimal_parameters`](../api/diagnostics.md)
+   does a two-parameter grid search over \((\hbar, \alpha)\) and
+   typically finds an optimum that beats fixing \(\alpha = 1\) by an
+   order of magnitude on the same working order.
 
 ## The sympy.dsolve workaround
 
@@ -88,43 +92,46 @@ problem.
 
 ## Convergence: dramatically faster than polynomial basis
 
+The Stage 12 library extension exposes \(\alpha\) as a sympy symbol
+and provides a two-parameter grid search via `optimal_parameters`.
+The example's `analyze()` sweeps the (ℏ, α) plane and reports the
+joint optimum:
+
 ```text
-Best ℏ in [-1.5, 0] at each working order:
-  M  best ℏ      f''(0)   |error|   gate
-  1     -6/5    +0.45000  0.01960   True
-  2     -9/10   +0.46445  0.00515   True
-  3     -7/10   +0.46017  0.00943   True
-  4     -1/2    +0.48610  0.01650   True
+Best (ℏ, α) found by grid search at each working order:
+  M  best ℏ   best α    f''(0)   |error|   gate
+  1   -4/5    7/10     +0.46762  0.00198   True
+  2   -1/2    7/10     +0.47003  0.00043   True
 ```
 
-Compare against the polynomial-basis Blasius:
+Tuning \(\alpha\) alongside \(\hbar\) is a **substantial**
+improvement over the Stage 11 single-parameter search with α=1:
 
-| Basis | Best M | Best ℏ | \(f''(0)\) | |error| |
-| --- | ---: | ---: | ---: | ---: |
-| Polynomial (Stage 10) | 5 | \(-2/5\) | \(0.4178\) | \(0.0518\) |
-| **Exponential (this stage)** | **2** | \(-9/10\) | \(0.4644\) | \(0.0052\) |
+| Strategy | M | f''(0) | |error| | vs Howarth |
+| --- | ---: | ---: | ---: | --- |
+| Polynomial basis (Stage 10) | 5 | 0.4178 | 0.0518 | 11.0% off |
+| Exp basis, α=1 only (Stage 11) | 2 | 0.4644 | 0.0052 | 1.1% off |
+| **Exp basis, (ℏ, α) jointly (Stage 12)** | **2** | **0.4700** | **0.00043** | **0.09% off** |
 
-The exponential basis reaches **an order of magnitude better
-accuracy in fewer than half the HAM iterations**. This is Liao's
-Rule 1 (solution expression) in action: choose the base that
-reflects the solution's asymptotic structure, and convergence
-follows.
+Two parameters and two HAM iterations beat the polynomial basis at
+M=5 by more than two orders of magnitude. This is Liao's Rule 1
+(solution expression) **plus** a free parameter that the library now
+fully exposes — choose the right base and tune the right knobs, and
+the convergence rate transforms.
 
 The regression test
-`test_exponential_basis_beats_polynomial_basis_at_lower_order` pins
-this comparison directly: exponential-basis error at \(M = 3\) is
-asserted to be at least three times smaller than polynomial-basis
-error at \(M = 5\).
+`test_two_parameter_beats_polynomial_basis_at_higher_order` pins
+this comparison: exponential-basis with the joint optimum at M=2 is
+asserted at least 50x better than polynomial-basis at M=5.
 
-## Why \(\hbar\) shifts with order
+## Why \((\hbar, \alpha)\) shifts with order
 
-The "best \(\hbar\)" varies with the working order:
+The "best \((\hbar, \alpha)\)" varies with the working order — both
+parameters drift as more HAM terms are summed:
 
 \[
-\hbar^*(M=1) = -6/5, \quad
-\hbar^*(M=2) = -9/10, \quad
-\hbar^*(M=3) = -7/10, \quad
-\hbar^*(M=4) = -1/2.
+(\hbar^*, \alpha^*)(M=1) = (-4/5, 7/10), \quad
+(\hbar^*, \alpha^*)(M=2) = (-1/2, 7/10).
 \]
 
 This is normal HAM behaviour. The partial sum is an approximation of
@@ -185,15 +192,11 @@ prints \(f''(0)\), absolute error, and gate result at the best
 
 ## What remains scope-deferred
 
-- **Two-parameter \((\hbar, \alpha)\) optimisation.** Liao tunes both
-  parameters; the library's `optimal_hbar` is single-parameter.
-  Extending to \(n\)-parameter grid search is a small generalisation
-  that has not been added.
 - **Higher-order solves.** Each HAM step calls sympy.dsolve on a
-  progressively more complex RHS; M = 5 takes several seconds, M = 8
-  becomes slow. Liao reports \(f''(0) = 0.469600\) accurate to 6
-  decimals at M ≈ 30; reaching that with our library would benefit
-  from a faster custom inverter that decomposes the RHS over the
-  basis \(\{\eta^j e^{-k\alpha\eta}\}\) and applies a closed-form
-  L^{-1} formula per basis element. The current dsolve-backed
-  inverter is correct but generic.
+  progressively more complex RHS with symbolic \(\alpha\); M = 2 takes
+  ≈ 3 s, M = 3 takes ≈ 12 s. Liao reports \(f''(0) = 0.469600\)
+  accurate to 6 decimals at M ≈ 30; reaching that with our library
+  would benefit from a faster custom inverter that decomposes the RHS
+  over the basis \(\{\eta^j e^{-k\alpha\eta}\}\) and applies a
+  closed-form L^{-1} formula per basis element. The current dsolve-
+  backed inverter is correct but generic.

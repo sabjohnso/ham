@@ -1,0 +1,131 @@
+"""Tests for the algebraic-contract checkers in `ham.contracts`.
+
+The `LinearOperator` data type does not enforce linearity of its
+`action` at construction time (a non-linear sympy callable cannot be
+detected by inspection without evaluating it). `ham.contracts.verify_linearity`
+gives the user an opt-in way to assert
+~L[alpha*u + beta*v] = alpha*L[u] + beta*L[v]~ on hand- or
+strategy-supplied samples before relying on a HamProblem built with
+that L.
+"""
+
+import pytest
+import sympy as sp
+from ham.contracts import LinearityViolation, verify_linearity
+from ham.operator import LinearOperator
+
+from tests.strategies import X
+
+
+def _diff_x(e: sp.Expr) -> sp.Expr:
+    return sp.diff(e, X)
+
+
+def _diff_x_squared(e: sp.Expr) -> sp.Expr:
+    return sp.diff(e, X, 2)
+
+
+def _square_action(e: sp.Expr) -> sp.Expr:
+    """A deliberately non-linear action used in negative tests."""
+    return e**2
+
+
+def _polynomial_samples() -> list[tuple[sp.Expr, sp.Expr, sp.Expr, sp.Expr]]:
+    """A few hand-picked (u, v, alpha, beta) quadruples."""
+    return [
+        (X, sp.Integer(1), sp.Integer(2), sp.Integer(3)),
+        (X**2, X + sp.Integer(1), sp.Rational(1, 2), sp.Integer(-1)),
+        (X**3 + X, sp.Integer(7), sp.Integer(-2), sp.Rational(5, 3)),
+    ]
+
+
+def test_verify_linearity_accepts_diff_x() -> None:
+    """L = d/dx is linear; verify_linearity returns silently."""
+    L = LinearOperator(var=X, action=_diff_x)  # noqa: N806  -- Liao's notation
+    verify_linearity(L, _polynomial_samples())
+
+
+def test_verify_linearity_accepts_second_derivative() -> None:
+    """L = d^2/dx^2 is linear; verify_linearity passes."""
+    L = LinearOperator(var=X, action=_diff_x_squared)  # noqa: N806
+    verify_linearity(L, _polynomial_samples())
+
+
+def test_verify_linearity_with_empty_samples_passes_vacuously() -> None:
+    """An empty sample iterable is a no-op (vacuous truth).
+
+    The helper exists to be called in user code; supporting empty
+    samples matches Hypothesis-style usage where a parametrised
+    sample set might currently be empty.
+    """
+    L = LinearOperator(var=X, action=_diff_x)  # noqa: N806
+    verify_linearity(L, [])
+
+
+def test_verify_linearity_rejects_nonlinear_action() -> None:
+    """A square action fails linearity on the first non-trivial sample."""
+    L = LinearOperator(var=X, action=_square_action)  # noqa: N806
+    with pytest.raises(LinearityViolation):
+        verify_linearity(L, _polynomial_samples())
+
+
+def test_linearity_violation_is_value_error() -> None:
+    """LinearityViolation derives from ValueError (per user decision)."""
+    assert issubclass(LinearityViolation, ValueError)
+
+
+def test_linearity_violation_carries_offending_sample() -> None:
+    """The exception payload identifies the offending (u, v, alpha, beta)."""
+    L = LinearOperator(var=X, action=_square_action)  # noqa: N806
+    sample = (X, sp.Integer(1), sp.Integer(2), sp.Integer(3))
+    with pytest.raises(LinearityViolation) as exc_info:
+        verify_linearity(L, [sample])
+    assert exc_info.value.sample == sample
+
+
+def test_linearity_violation_carries_lhs_and_rhs() -> None:
+    """The exception carries the computed LHS and RHS for the failing sample.
+
+    For the square action with (u, v, alpha, beta) = (X, 1, 2, 3):
+      lhs = (2X + 3)^2 = 4X^2 + 12X + 9
+      rhs = 2 X^2 + 3 (1)^2 = 2 X^2 + 3
+    Both numbers should be exposed via the exception so a debugging
+    caller can compare them without reconstructing them.
+    """
+    L = LinearOperator(var=X, action=_square_action)  # noqa: N806
+    sample = (X, sp.Integer(1), sp.Integer(2), sp.Integer(3))
+    with pytest.raises(LinearityViolation) as exc_info:
+        verify_linearity(L, [sample])
+    err = exc_info.value
+    expected_lhs = (2 * X + 3) ** 2
+    expected_rhs = 2 * X**2 + 3
+    assert sp.expand(err.lhs - expected_lhs) == 0
+    assert sp.expand(err.rhs - expected_rhs) == 0
+
+
+def test_verify_linearity_message_names_sample_and_sides() -> None:
+    """The default message string mentions the sample and both sides."""
+    L = LinearOperator(var=X, action=_square_action)  # noqa: N806
+    sample = (X, sp.Integer(1), sp.Integer(2), sp.Integer(3))
+    with pytest.raises(LinearityViolation) as exc_info:
+        verify_linearity(L, [sample])
+    msg = str(exc_info.value)
+    assert "alpha" in msg
+    assert "beta" in msg
+
+
+def test_verify_linearity_passes_on_quadratic_drag_example() -> None:
+    """The quadratic-drag worked example's L = d/dt is linear; documentary check.
+
+    Demonstrates intended usage: call verify_linearity on a worked
+    example's L at problem-construction time to catch a misconfigured
+    action before any deformation step runs.
+    """
+    from examples.quadratic_drag import T, build_problem
+
+    L = build_problem().L  # noqa: N806
+    samples = [
+        (T, sp.Integer(1), sp.Integer(2), sp.Integer(-1)),
+        (T**2, T + sp.Integer(3), sp.Rational(1, 4), sp.Integer(5)),
+    ]
+    verify_linearity(L, samples)

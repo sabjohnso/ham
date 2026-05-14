@@ -24,7 +24,10 @@ right-hand side to obtain u_m. Both directions live in this module.
 
 Linearity of `action` and consistency of `inverter` with `bcs` are the
 caller's contract; the wrapper does not enforce them. Property tests
-verify both for known operators.
+verify both for known operators. Users who want a runtime check on
+their own `action` can call `ham.contracts.verify_linearity(L, samples)`
+at problem-construction time; it raises `LinearityViolation` with the
+offending sample if the law fails.
 """
 
 from collections.abc import Callable

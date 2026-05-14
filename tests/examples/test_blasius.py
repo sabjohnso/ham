@@ -14,12 +14,24 @@ from examples.blasius import (
     ETA_MAX,
     HBAR,
     HOWARTH_F_DOUBLE_PRIME_AT_ZERO,
+    ORIGINAL_BCS,
     build_problem,
     f_double_prime_at_zero,
     is_convergent,
     solve_to,
 )
+from ham.contracts import verify_initial_guess
 from ham.solver import HamSolution
+
+
+def test_initial_guess_satisfies_original_bcs_via_verify_helper() -> None:
+    """`ham.contracts.verify_initial_guess` accepts u_0 against the three BCs.
+
+    Documentary cross-check that complements the explicit
+    `test_initial_guess_satisfies_truncated_bcs` test by running the
+    same three pointwise checks through the public helper.
+    """
+    verify_initial_guess(build_problem(), ORIGINAL_BCS)
 
 
 @pytest.fixture(scope="module")

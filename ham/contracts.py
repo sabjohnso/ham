@@ -23,13 +23,21 @@ Currently exposed:
   - `verify_linearity(L, samples)` — assert that
     `L[alpha*u + beta*v] == alpha*L[u] + beta*L[v]` on each sample.
     Raises `LinearityViolation` on the first failing sample.
+  - `verify_initial_guess(problem, original_bcs)` — assert that
+    `problem.u0` satisfies each original (not deformation) boundary
+    condition pointwise. Raises `InitialGuessViolation` on the first
+    failing BC. Encodes Liao's "Rule of Solution Existence":
+    `u_0` must already satisfy the original problem's BCs so that
+    the deformation chain (which produces homogeneous higher
+    iterates) yields a partial sum that still satisfies them.
 """
 
 from collections.abc import Iterable
 
 import sympy as sp
 
-from ham.operator import LinearOperator
+from ham.deformation import HamProblem
+from ham.operator import BoundaryCondition, LinearOperator
 
 
 class LinearityViolation(ValueError):  # noqa: N818  -- domain term, not "Error"
@@ -89,3 +97,70 @@ def verify_linearity(
         rhs = alpha * L.apply(u) + beta * L.apply(v)
         if sp.expand(lhs - rhs) != 0:
             raise LinearityViolation(sample=sample, lhs=lhs, rhs=rhs)
+
+
+class InitialGuessViolation(ValueError):  # noqa: N818  -- domain term, not "Error"
+    """Raised when `problem.u0` fails to satisfy an original boundary condition.
+
+    Subclass of `ValueError` for the same reason as `LinearityViolation`:
+    the failure indicates invalid user input rather than an internal
+    invariant violation.
+
+    Attributes:
+      bc:     the offending `BoundaryCondition`.
+      actual: the computed value of `u_0^(k)(point)` (where `k` is
+              `bc.derivative_order` and `point` is `bc.point`).
+    """
+
+    def __init__(self, bc: BoundaryCondition, actual: sp.Expr) -> None:
+        super().__init__(
+            f"u_0 fails to satisfy the original boundary condition "
+            f"u^({bc.derivative_order})({bc.point!r}) = {bc.value!r}: "
+            f"actual value is {actual!r}."
+        )
+        self.bc = bc
+        self.actual = actual
+
+
+def verify_initial_guess(
+    problem: HamProblem,
+    original_bcs: Iterable[BoundaryCondition],
+) -> None:
+    """Assert that `problem.u0` satisfies each original BC pointwise.
+
+    Liao's Rule of Solution Existence requires that the initial guess
+    `u_0` already satisfy the original boundary conditions; the
+    higher-order deformation iterates `u_m (m >= 1)` are produced
+    against /homogeneous/ versions of those BCs, so the partial sum
+    `u^{(M)} = sum_k u_k` satisfies the original BCs iff `u_0` does.
+
+    For each `bc` in `original_bcs`, this helper:
+
+      1. Differentiates `u_0` w.r.t. `problem.L.var` to order
+         `bc.derivative_order`.
+      2. Evaluates the derivative at `bc.point`:
+         - via `sp.limit` when `bc.point` is infinite, since `.subs`
+           on `sp.oo` is unreliable for non-trivial expressions;
+         - via `.subs` otherwise.
+      3. Asserts `sp.simplify(actual - bc.value) == 0`.
+
+    Raises `InitialGuessViolation` on the first failing `bc`, with
+    the `bc` and the `actual` computed value attached. An empty
+    `original_bcs` iterable is a no-op.
+
+    Note: the BCs declared on `problem.L` are the /deformation/ BCs,
+    which are typically the homogeneous versions of `original_bcs`.
+    This helper exists because the original (possibly non-homogeneous)
+    BCs are not encoded on `HamProblem` itself — they live in the
+    user's mental model and must be supplied separately.
+    """
+    var = problem.L.var
+    u0 = problem.u0
+    for bc in original_bcs:
+        derivative = sp.diff(u0, var, bc.derivative_order)
+        if bc.point.is_infinite:
+            actual = sp.limit(derivative, var, bc.point)
+        else:
+            actual = derivative.subs(var, bc.point)
+        if sp.simplify(actual - bc.value) != 0:
+            raise InitialGuessViolation(bc=bc, actual=actual)

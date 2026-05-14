@@ -9,13 +9,24 @@ from itertools import pairwise
 import sympy as sp
 from examples.quadratic_drag import (
     HBAR,
+    ORIGINAL_BCS,
     T,
+    build_problem,
     is_convergent,
     solve_to,
     taylor_reference,
 )
+from ham.contracts import verify_initial_guess
 from ham.diagnostics import optimal_hbar, residual_l2_squared
 from ham.solver import HamSolution
+
+
+def test_initial_guess_satisfies_original_bcs() -> None:
+    """u_0 = 0 satisfies v(0) = 0; verify_initial_guess accepts it.
+
+    Documentary check that ORIGINAL_BCS is consistent with build_problem().
+    """
+    verify_initial_guess(build_problem(), ORIGINAL_BCS)
 
 
 def test_partial_sum_matches_tanh_taylor_at_order_5() -> None:

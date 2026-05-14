@@ -61,6 +61,18 @@ HBAR = sp.Symbol("hbar")
 _DEFAULT_INTERVAL = (sp.Integer(0), sp.Integer(1))
 _DEFAULT_THRESHOLD = sp.Rational(1, 100)
 
+ORIGINAL_BCS: tuple[BoundaryCondition, ...] = (
+    BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Rational(1, 2)),
+)
+"""The original problem's boundary conditions: u(0) = 1/2.
+
+Exposed as a module-level constant so callers can hand it to
+`ham.contracts.verify_initial_guess(build_problem(), ORIGINAL_BCS)`
+to assert that the non-zero `u_0 = 1/2` satisfies the original BC.
+The deformation BC declared on `build_problem().L` is the homogeneous
+version `u(0) = 0`.
+"""
+
 
 def build_problem() -> HamProblem:
     """Assemble the logistic HAM problem (see module docstring)."""

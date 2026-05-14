@@ -7,12 +7,25 @@ gives the user an opt-in way to assert
 ~L[alpha*u + beta*v] = alpha*L[u] + beta*L[v]~ on hand- or
 strategy-supplied samples before relying on a HamProblem built with
 that L.
+
+Liao's Rule of Solution Existence requires that `u_0` satisfy the
+/original/ (not just deformation) boundary conditions; the deformation
+BCs declared on `problem.L` are typically the homogeneous versions.
+`ham.contracts.verify_initial_guess(problem, original_bcs)` is the
+sibling checker that pins this contract at problem-construction time.
 """
 
 import pytest
 import sympy as sp
-from ham.contracts import LinearityViolation, verify_linearity
-from ham.operator import LinearOperator
+from ham.contracts import (
+    InitialGuessViolation,
+    LinearityViolation,
+    verify_initial_guess,
+    verify_linearity,
+)
+from ham.deformation import HamProblem
+from ham.nonlinear import NonlinearOperator
+from ham.operator import BoundaryCondition, LinearOperator
 
 from tests.strategies import X
 
@@ -129,3 +142,115 @@ def test_verify_linearity_passes_on_quadratic_drag_example() -> None:
         (T**2, T + sp.Integer(3), sp.Rational(1, 4), sp.Integer(5)),
     ]
     verify_linearity(L, samples)
+
+
+# --- verify_initial_guess -------------------------------------------------
+
+
+U = sp.Function("u")
+HBAR = sp.Symbol("hbar")
+
+
+def _trivial_problem(u0: sp.Expr) -> HamProblem:
+    """A HAM problem skeleton with the given u_0 and a placeholder N.
+
+    verify_initial_guess only reads problem.u0 and problem.L.var, so the
+    other fields can be whatever scaffolding is cheapest to build.
+    """
+    return HamProblem(
+        L=LinearOperator(var=X, action=lambda e: sp.diff(e, X)),
+        N=NonlinearOperator(expr=U(X), dependent=U, indep=X),
+        H=sp.Integer(1),
+        hbar=HBAR,
+        u0=u0,
+    )
+
+
+def test_verify_initial_guess_accepts_point_value_bc() -> None:
+    """u_0 = 1/2 satisfies u(0) = 1/2 (the logistic case)."""
+    problem = _trivial_problem(sp.Rational(1, 2))
+    original_bcs = (
+        BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Rational(1, 2)),
+    )
+    verify_initial_guess(problem, original_bcs)
+
+
+def test_verify_initial_guess_accepts_first_derivative_bc() -> None:
+    """u_0 = X satisfies u(0) = 0 AND u'(0) = 1 (multi-BC case)."""
+    problem = _trivial_problem(X)
+    original_bcs = (
+        BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Integer(0)),
+        BoundaryCondition(point=sp.Integer(0), derivative_order=1, value=sp.Integer(1)),
+    )
+    verify_initial_guess(problem, original_bcs)
+
+
+def test_verify_initial_guess_accepts_asymptotic_bc() -> None:
+    """u_0 = x - 1 + exp(-x) satisfies u'(infty) = 1 (Blasius-style asymptotic BC).
+
+    Derivative is 1 - exp(-x), with limit 1 as x -> infty. Exercises
+    the sp.limit code path; .subs(X, sp.oo) would fail or yield an
+    unevaluated expression here.
+    """
+    var = sp.Symbol("x_positive", positive=True)
+    problem = HamProblem(
+        L=LinearOperator(var=var, action=lambda e: sp.diff(e, var)),
+        N=NonlinearOperator(expr=U(var), dependent=U, indep=var),
+        H=sp.Integer(1),
+        hbar=HBAR,
+        u0=var - sp.Integer(1) + sp.exp(-var),
+    )
+    original_bcs = (BoundaryCondition(point=sp.oo, derivative_order=1, value=sp.Integer(1)),)
+    verify_initial_guess(problem, original_bcs)
+
+
+def test_verify_initial_guess_rejects_wrong_value() -> None:
+    """u_0 = 1 violates u(0) = 0: InitialGuessViolation raised."""
+    problem = _trivial_problem(sp.Integer(1))
+    original_bcs = (
+        BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Integer(0)),
+    )
+    with pytest.raises(InitialGuessViolation):
+        verify_initial_guess(problem, original_bcs)
+
+
+def test_verify_initial_guess_rejects_wrong_derivative() -> None:
+    """u_0 = X**2 violates u'(0) = 1 (the derivative at 0 is 0, not 1)."""
+    problem = _trivial_problem(X**2)
+    original_bcs = (
+        BoundaryCondition(point=sp.Integer(0), derivative_order=1, value=sp.Integer(1)),
+    )
+    with pytest.raises(InitialGuessViolation):
+        verify_initial_guess(problem, original_bcs)
+
+
+def test_verify_initial_guess_empty_tuple_passes_vacuously() -> None:
+    """Empty BC tuple is a no-op (vacuous truth)."""
+    problem = _trivial_problem(sp.Integer(42))
+    verify_initial_guess(problem, ())
+
+
+def test_initial_guess_violation_is_value_error() -> None:
+    """InitialGuessViolation derives from ValueError (sibling to LinearityViolation)."""
+    assert issubclass(InitialGuessViolation, ValueError)
+
+
+def test_initial_guess_violation_carries_bc_and_actual() -> None:
+    """The exception carries the offending bc and the actual computed value."""
+    problem = _trivial_problem(sp.Integer(5))
+    bc = BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Integer(0))
+    with pytest.raises(InitialGuessViolation) as exc_info:
+        verify_initial_guess(problem, (bc,))
+    err = exc_info.value
+    assert err.bc == bc
+    assert sp.simplify(err.actual - sp.Integer(5)) == 0
+
+
+def test_verify_initial_guess_message_names_bc_and_actual() -> None:
+    """The default message string mentions the bc and the actual value."""
+    problem = _trivial_problem(sp.Integer(5))
+    bc = BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Integer(0))
+    with pytest.raises(InitialGuessViolation) as exc_info:
+        verify_initial_guess(problem, (bc,))
+    msg = str(exc_info.value)
+    assert "u_0" in msg or "initial guess" in msg.lower()

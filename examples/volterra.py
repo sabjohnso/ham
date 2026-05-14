@@ -84,6 +84,17 @@ ALPHA = sp.Rational(1, 10)
 _DEFAULT_INTERVAL = (sp.Integer(0), sp.Integer(1))
 _DEFAULT_THRESHOLD = sp.Rational(1, 1000)
 
+ORIGINAL_BCS: tuple[BoundaryCondition, ...] = (
+    BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=ALPHA),
+)
+"""The original problem's boundary conditions: u(0) = alpha = 1/10.
+
+Exposed as a module-level constant for use with
+`ham.contracts.verify_initial_guess(build_problem(), ORIGINAL_BCS)`.
+The deformation BC on `build_problem().L` is the homogeneous
+`u(0) = 0`.
+"""
+
 
 def build_problem() -> HamProblem:
     """Assemble the Volterra HAM problem (see module docstring)."""

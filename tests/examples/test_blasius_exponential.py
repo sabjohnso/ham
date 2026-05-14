@@ -14,6 +14,7 @@ from examples.blasius_exponential import (
     ETA,
     HBAR,
     HOWARTH_F_DOUBLE_PRIME_AT_ZERO,
+    ORIGINAL_BCS,
     _blasius_exponential_inverter,
     analyze,
     build_problem,
@@ -21,7 +22,19 @@ from examples.blasius_exponential import (
     is_convergent,
     solve_to,
 )
+from ham.contracts import verify_initial_guess
 from ham.solver import HamSolution
+
+
+def test_initial_guess_satisfies_original_bcs_via_verify_helper() -> None:
+    """`ham.contracts.verify_initial_guess` accepts u_0 against the three Blasius BCs.
+
+    Exercises the sp.limit code path for the asymptotic BC
+    f'(infty) = 1 — sp.limit on the symbolic-alpha derivative
+    1 - exp(-alpha eta) requires alpha to be declared positive, which
+    the example does via sp.Symbol("alpha", positive=True).
+    """
+    verify_initial_guess(build_problem(), ORIGINAL_BCS)
 
 
 @pytest.fixture(scope="module")

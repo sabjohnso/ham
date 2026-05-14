@@ -10,13 +10,21 @@ import sympy as sp
 from examples.volterra import (
     ALPHA,
     HBAR,
+    ORIGINAL_BCS,
     T,
+    build_problem,
     is_convergent,
     solve_to,
     taylor_reference,
 )
+from ham.contracts import verify_initial_guess
 from ham.diagnostics import optimal_hbar, residual_l2_squared
 from ham.solver import HamSolution
+
+
+def test_initial_guess_satisfies_original_bcs() -> None:
+    """u_0 = alpha = 1/10 satisfies u(0) = alpha; verify_initial_guess accepts it."""
+    verify_initial_guess(build_problem(), ORIGINAL_BCS)
 
 
 def test_u0_matches_initial_population() -> None:

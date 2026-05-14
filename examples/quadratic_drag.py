@@ -74,6 +74,18 @@ HBAR = sp.Symbol("hbar")
 _DEFAULT_THRESHOLD = sp.Rational(1, 10)
 _DEFAULT_INTERVAL = (sp.Integer(0), sp.Integer(1))
 
+ORIGINAL_BCS: tuple[BoundaryCondition, ...] = (
+    BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Integer(0)),
+)
+"""The original problem's boundary conditions: v(0) = 0.
+
+Exposed as a module-level constant so callers can hand it to
+`ham.contracts.verify_initial_guess(build_problem(), ORIGINAL_BCS)`
+to assert that `u_0 = 0` satisfies the original BC. The deformation
+BCs declared on `build_problem().L` are the homogeneous versions
+(here identical, because the original BC is already homogeneous).
+"""
+
 
 def build_problem() -> HamProblem:
     """Assemble the quadratic-drag HAM problem (see module docstring)."""

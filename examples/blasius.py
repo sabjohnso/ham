@@ -77,6 +77,27 @@ ETA_MAX = sp.Integer(10)
 HOWARTH_F_DOUBLE_PRIME_AT_ZERO = sp.Rational(4696, 10000)
 _DEFAULT_TOLERANCE = sp.Rational(1, 10)
 
+ORIGINAL_BCS: tuple[BoundaryCondition, ...] = (
+    BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Integer(0)),
+    BoundaryCondition(point=sp.Integer(0), derivative_order=1, value=sp.Integer(0)),
+    BoundaryCondition(point=ETA_MAX, derivative_order=1, value=sp.Integer(1)),
+)
+"""The original (truncated-domain) problem's boundary conditions.
+
+  f(0) = 0,  f'(0) = 0,  f'(eta_max) = 1.
+
+The third condition is the truncated version of Blasius's
+asymptotic `f'(infty) = 1`; the polynomial-basis example replaces
+the infinite endpoint with `ETA_MAX = 10` for library compatibility.
+The exponential-basis example handles the true `f'(infty) = 1`
+directly.
+
+Exposed for use with
+`ham.contracts.verify_initial_guess(build_problem(), ORIGINAL_BCS)`.
+The deformation BCs declared on `build_problem().L` are the
+homogeneous versions (all values zero).
+"""
+
 
 def build_problem() -> HamProblem:
     """Assemble the Blasius HAM problem in truncated-domain form."""

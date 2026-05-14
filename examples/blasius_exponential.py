@@ -115,6 +115,25 @@ HOWARTH_F_DOUBLE_PRIME_AT_ZERO = sp.Rational(4696, 10000)
 _DEFAULT_TOLERANCE = sp.Rational(1, 50)
 _DEFAULT_ALPHA = sp.Integer(1)
 
+ORIGINAL_BCS: tuple[BoundaryCondition, ...] = (
+    BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Integer(0)),
+    BoundaryCondition(point=sp.Integer(0), derivative_order=1, value=sp.Integer(0)),
+    BoundaryCondition(point=sp.oo, derivative_order=1, value=sp.Integer(1)),
+)
+"""The original Blasius boundary conditions: f(0) = 0, f'(0) = 0, f'(infty) = 1.
+
+The third condition is genuinely asymptotic here (unlike the
+truncated-domain polynomial-basis example, which replaces it with
+f'(eta_max) = 1). `ham.contracts.verify_initial_guess` evaluates
+that condition via `sp.limit`, so the BC's `point=sp.oo` is handled
+correctly.
+
+Exposed for use with
+`ham.contracts.verify_initial_guess(build_problem(), ORIGINAL_BCS)`.
+The deformation BCs declared on `build_problem().L` are the
+homogeneous versions (all values zero).
+"""
+
 # Module-level inverter so the lru_cache fills once and is shared across
 # every solve_to() call. Stage 13a's closed-form basis-aware inverter
 # replaces the per-step sympy.dsolve call with a decompose-and-lookup

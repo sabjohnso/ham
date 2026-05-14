@@ -300,8 +300,11 @@ an indispensable companion to the bare partial sum.
 - [Concepts](concepts/index.md): how the homotopy equation works, why
   the m-th order deformation has the form it does, what Liao's
   convergence theorem actually says.
-- [Worked examples](examples/index.md): full annotated runs of the two
-  examples shipped with the library, including the
-  adaptive-ℏ observation on quadratic drag.
+- [Worked examples](examples/index.md): full annotated runs of all five
+  examples shipped with the library — closed-form benchmarks
+  (quadratic drag, logistic), the integro-differential Volterra model,
+  and Blasius in both polynomial and exponential bases — including the
+  adaptive-ℏ observation on quadratic drag and the joint (ℏ, α)
+  optimum on Blasius-exponential.
 - [API reference](api/index.md): the public surface of every module,
   extracted from docstrings.

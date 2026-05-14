@@ -10,8 +10,10 @@ summation or via Padé.
 ## What you get
 
 - A tiny algebraic core in eight modules.
-- End-to-end worked examples that pin HAM output against closed-form
-  Taylor expansions of `tanh(t)` and the sigmoid `1/(1 + e^{-t})`.
+- Five end-to-end worked examples: closed-form benchmarks
+  (`tanh(t)`, the sigmoid `1/(1 + e^{-t})`), the integro-differential
+  Volterra single-species population model, and the Blasius
+  boundary-layer BVP in two basis choices (polynomial, exponential).
 - A convergence-diagnostics toolkit: residual, L² / discrete norms,
   Liao's ℏ-curve, grid-search optimal-ℏ.
 - Homotopy-Padé acceleration in \(q\) that recovers `1/(1-x)` exactly
@@ -60,8 +62,9 @@ print(solution.evaluate_at_hbar(sp.Integer(-1)))
   diagnose → accelerate workflow on the logistic problem.
 - **[Concepts](concepts/index.md)** — the HAM math from scratch:
   homotopy equation, deformation chain, convergence, Padé.
-- **[Worked examples](examples/index.md)** — narrative form of the two
-  examples that ship with the library.
+- **[Worked examples](examples/index.md)** — narrative walk-throughs of
+  the five examples that ship with the library, from the closed-form
+  tanh/sigmoid benchmarks to the Blasius BVP in two different bases.
 - **[API reference](api/index.md)** — auto-extracted from module
   docstrings.
 - **[Design notes](design/index.md)** — the architectural decisions and

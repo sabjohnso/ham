@@ -102,8 +102,12 @@ ham/
   pade.py          homotopy-Padé acceleration
 
 examples/
-  quadratic_drag.py    v' = 1 - v², v(0) = 0  (exact tanh)
-  logistic.py          u' = u(1 - u), u(0) = 1/2  (exact sigmoid)
+  quadratic_drag.py        v' = 1 - v², v(0) = 0                   (exact tanh)
+  logistic.py              u' = u(1 - u), u(0) = 1/2               (exact sigmoid)
+  volterra.py              u' = κ·u·(1 - u - ∫u dτ), u(0) = α      (Taylor recurrence)
+  blasius.py               f''' + ½ f f'' = 0, polynomial basis    (Howarth f''(0) ≈ 0.4696)
+  blasius_exponential.py   same Blasius BVP, exponential basis     (joint (ℏ, α) optimum)
+  blasius_inverter.py      closed-form basis-aware L⁻¹ for blasius_exponential
 ```
 
 Each module's docstring is the design document. Each example is both an
@@ -143,7 +147,8 @@ The library follows Algebra-Driven Design: each module exposes algebraic
 laws (linearity of `L`, Cauchy structure of `N`, causality in `q`, etc.)
 and Hypothesis property tests assert those laws directly. Worked examples
 under `tests/examples/` pin end-to-end output against closed-form Taylor
-expansions.
+expansions (tanh, sigmoid), Taylor recurrences (Volterra), and published
+numerical references (Howarth's Blasius `f''(0) ≈ 0.4696`).
 
 ## Continuous integration
 

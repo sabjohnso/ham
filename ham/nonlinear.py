@@ -138,16 +138,33 @@ class NonlinearOperator:
         coefficient-wise integration on the integrand's compiled QSeries.
 
         Supports the canonical Volterra form: a single-variable definite
-        integral from 0 to `indep` whose integrand depends on the dummy
-        only through `dependent(dummy)` (and its derivatives in the dummy).
-        Other shapes — multi-variable integrals, lower bounds other than 0,
-        upper bounds other than `indep`, or integrands with explicit
-        non-`dependent` dummy dependence — raise NotImplementedError.
+        integral from 0 to `indep` whose integrand depends on `indep`
+        *only* through `dependent(dummy)` (and its derivatives in the
+        dummy). Concretely the integrand must satisfy:
 
-        Algorithm: substitute `dummy -> indep` in the integrand (this is
-        sound when the dummy appears only inside `dependent(dummy)` calls),
-        recursively compile the resulting expression to obtain the
-        QSeries `f(phi)`, then `f(phi).map_coeffs(integrate from 0 to indep)`.
+          - lower bound is 0;
+          - upper bound is `self.indep`;
+          - integrand has no free occurrence of `self.indep` (so that
+            the `dummy -> indep` substitution below does not conflate
+            two distinct variables).
+
+        Other shapes — multi-variable / nested integrals, non-zero
+        lower bounds, upper bounds other than `indep`, or integrands
+        with explicit `indep` dependence outside `dependent(dummy)` —
+        raise NotImplementedError naming the violated constraint. The
+        last guard prevents a silent miscompile: e.g.
+        `Integral(indep * u(s), (s, 0, indep))` semantically means
+        `indep · ∫_0^indep u(s) ds`, but the `subs(s, indep)` step
+        would silently turn it into `∫_0^indep s · u(s) ds`, a
+        different function. Users with such integrands should factor
+        the `indep`-dependent factor out of the integral before
+        constructing the NonlinearOperator.
+
+        Algorithm: substitute `dummy -> indep` in the integrand (sound
+        because the dummy appears only inside `dependent(dummy)` calls
+        and the integrand has no free `indep`), recursively compile
+        the resulting expression to obtain the QSeries `f(phi)`, then
+        `f(phi).map_coeffs(integrate from 0 to indep)`.
         """
         if len(node.limits) != 1:
             raise NotImplementedError(
@@ -172,6 +189,18 @@ class NonlinearOperator:
                 f"NonlinearOperator.apply_series only handles integrals with "
                 f"upper bound = {self.indep!r} (the independent variable); "
                 f"got {node!r} with upper bound {upper}."
+            )
+        if self.indep in node.function.free_symbols:
+            raise NotImplementedError(
+                f"NonlinearOperator.apply_series only handles integrals whose "
+                f"integrand depends on the integration variable through "
+                f"{self.dependent}({dummy}) (and its dummy-derivatives); got "
+                f"{node!r} whose integrand has explicit dependence on the "
+                f"independent variable {self.indep!r}. The compiler's "
+                f"dummy-to-indep substitution would silently conflate the two "
+                f"variables and produce a mathematically different result. "
+                f"Factor any {self.indep!r}-dependent term out of the integral "
+                f"before constructing the NonlinearOperator."
             )
         integrand_at_indep = node.function.subs(dummy, self.indep)
         integrand_qseries = self._compile(integrand_at_indep, phi)

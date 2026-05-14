@@ -463,3 +463,44 @@ def test_apply_series_double_integral_rejected() -> None:
     phi = QSeries([sp.Integer(1)], order=0)
     with pytest.raises(NotImplementedError):
         n_op.apply_series(phi)
+
+
+def test_apply_series_integral_rejects_integrand_with_indep_dependence() -> None:
+    """Integrand with explicit X-dependence outside u(s) raises.
+
+    `Integral(X * u(s), (s, 0, X))` semantically means `X · ∫_0^X u(s) ds`,
+    but the compiler's `subs(s, X)` step would silently turn it into
+    `∫_0^X s · u(s) ds` — a different function. Guarding against this
+    case is item 1 of the post-review plan.
+    """
+    s = sp.Symbol("s")
+    expr = sp.Integral(X * U(s), (s, 0, X))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([sp.Integer(1)], order=0)
+    with pytest.raises(NotImplementedError, match="independent variable"):
+        n_op.apply_series(phi)
+
+
+def test_apply_series_integral_rejects_integrand_with_indep_inside_transcendental() -> None:
+    """`Integral(cos(X) · u(s), (s, 0, X))` also raises.
+
+    Any free occurrence of the independent variable in the integrand
+    is enough to trip the guard, regardless of how the variable appears.
+    """
+    s = sp.Symbol("s")
+    expr = sp.Integral(sp.cos(X) * U(s), (s, 0, X))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([sp.Integer(1)], order=0)
+    with pytest.raises(NotImplementedError, match="independent variable"):
+        n_op.apply_series(phi)
+
+
+def test_apply_series_integral_error_message_names_indep_variable() -> None:
+    """The raised error message includes the independent variable's name."""
+    s = sp.Symbol("s")
+    expr = sp.Integral(X**2 * U(s), (s, 0, X))
+    n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+    phi = QSeries([sp.Integer(1)], order=0)
+    with pytest.raises(NotImplementedError) as exc_info:
+        n_op.apply_series(phi)
+    assert "x" in str(exc_info.value)

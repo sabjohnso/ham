@@ -18,9 +18,11 @@ How this example illustrates Liao's three fundamental rules
    `L = d/dt` and the deformation BC `u_k(0) = 0` for `k >= 1` keep
    every iterate in that base.
 
-2. **Coefficient ergodicity.** Each HAM step raises the polynomial
-   degree by one (the inverse of `L = d/dt`), so every power `t^k`
-   eventually appears in some `u_k(t)`.
+2. **Coefficient ergodicity** (base coefficients in
+   `u = Σ_n c_n · t^n`, /not/ the q-coefficients `u_k`; see Liao Rule 2
+   in `docs/concepts/convergence.md`). Each HAM step raises the
+   polynomial degree by one (the inverse of `L = d/dt`), so every
+   power `t^k` eventually appears in some `u_k(t)`.
 
 3. **Solution existence.** This example exercises a code path the
    prior worked examples did not: a **non-zero initial guess**

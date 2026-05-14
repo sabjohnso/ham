@@ -59,8 +59,11 @@ characteristic failure modes.
    choice for Blasius — Liao explicitly uses an exponential base.
    The slow convergence we see here is Rule 1 making its argument:
    a wrong base costs orders.
-2. **Coefficient ergodicity.** Each HAM step raises the polynomial
-   degree of \(u_k\) by 3 (from \(L^{-1}\) of \(d^3/d\eta^3\)).
+2. **Coefficient ergodicity** (base coefficients in
+   \(u = \sum_n c_n \eta^n\), *not* the \(q\)-coefficients \(u_k\); see
+   [Rule 2](../concepts/convergence.md)). Each HAM step raises the
+   polynomial degree of \(u_k\) by 3 (from \(L^{-1}\) of
+   \(d^3/d\eta^3\)).
 3. **Solution existence.** \(u_0 = \eta^2 / (2\eta_{\max})\)
    satisfies all three truncated BCs exactly:
    \(u_0(0) = 0\), \(u_0'(0) = 0\), \(u_0'(\eta_{\max}) = 1\). The

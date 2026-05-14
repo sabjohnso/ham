@@ -41,10 +41,12 @@ that \(L^{-1}\) adds.
    polynomial Taylor expansion (derivable directly from the
    integro-differential equation; see `taylor_reference` below). The
    polynomial base via \(L = d/dt\) reflects that structure.
-2. **Coefficient ergodicity.** Each HAM step raises the polynomial
-   degree of \(u_k(t)\) by **two** — one from \(L^{-1}\), one from
-   the integral inside \(N\) — so every power \(t^k\) eventually
-   appears in some \(u_m\).
+2. **Coefficient ergodicity** (base coefficients in
+   \(u = \sum_n c_n t^n\), *not* the \(q\)-coefficients \(u_k\); see
+   [Rule 2](../concepts/convergence.md)). Each HAM step raises the
+   polynomial degree of \(u_k(t)\) by **two** — one from \(L^{-1}\),
+   one from the integral inside \(N\) — so every power \(t^k\)
+   eventually appears in some \(u_m\).
 3. **Solution existence.** \(u_0 = \alpha\) is a constant function
    satisfying the original BC \(u(0) = \alpha\) exactly. The
    deformation BCs are the homogeneous \(u_m(0) = 0\) for \(m \ge 1\).

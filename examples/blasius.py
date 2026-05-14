@@ -42,9 +42,11 @@ How this example illustrates Liao's three fundamental rules
    slow convergence as a feature of the example. The slow
    convergence /is/ Liao's point about Rule 1: a wrong base costs
    you orders.
-2. **Coefficient ergodicity.** Each HAM step raises the polynomial
-   degree by 3 (from L^{-1} of d^3/dη^3), so every power η^k
-   eventually appears in some u_k(η).
+2. **Coefficient ergodicity** (base coefficients in
+   `u = Σ_n c_n · η^n`, /not/ the q-coefficients `u_k`; see Liao Rule 2
+   in `docs/concepts/convergence.md`). Each HAM step raises the
+   polynomial degree by 3 (from L^{-1} of d^3/dη^3), so every power
+   η^k eventually appears in some u_k(η).
 3. **Solution existence.** u_0 = η^2 / (2 η_max) satisfies all three
    truncated BCs exactly: u_0(0) = 0, u_0'(0) = 0, u_0'(η_max) = 1.
    The deformation BCs are the homogeneous versions of these three

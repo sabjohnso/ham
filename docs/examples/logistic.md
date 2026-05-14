@@ -36,9 +36,11 @@ touched.
    only odd-power corrections about the centre value \(1/2\). A
    polynomial base via \(L = d/dt\) with \(u_k(0) = 0\) for \(k \ge 1\)
    reflects that structure.
-2. **Coefficient ergodicity.** The deformation BCs are homogeneous,
-   the polynomial degree grows with \(k\), and \(H = 1\) — no terms
-   are structurally blocked.
+2. **Coefficient ergodicity** (base coefficients in \(u = \sum_n c_n t^n\),
+   *not* the \(q\)-coefficients \(u_k\); see
+   [Rule 2](../concepts/convergence.md)). The deformation BCs are
+   homogeneous, the polynomial degree grows with \(k\), and \(H = 1\)
+   — no terms are structurally blocked.
 3. **Solution existence.** \(u_0 = 1/2\) satisfies the original BC
    \(u(0) = 1/2\) exactly. The library's separation of "original BC
    satisfied by \(u_0\)" from "homogeneous deformation BCs on \(L\)"

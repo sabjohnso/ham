@@ -75,8 +75,12 @@ Four objects are at the author's disposal:
   problems; Fourier base for periodic solutions.
 - The **auxiliary function** \(H(x)\). Its job is to make every term
   of the original equation reachable by some \(u_k\) (Liao's second
-  rule, *coefficient ergodicity*). For \(N\) polynomial in \(u\), and
-  a polynomial base, \(H = 1\) usually works.
+  rule, *coefficient ergodicity* — the "coefficients" here are the
+  **base coefficients** \(c_n\) in \(u = \sum_n c_n B_n(x)\), not the
+  \(q\)-coefficients \(u_k\); see Rule 2 in the
+  [convergence page](convergence.md)).
+  For \(N\) polynomial in \(u\), and a polynomial base, \(H = 1\)
+  usually works.
 - The **convergence-control parameter** \(\hbar\). Tuning \(\hbar\)
   adjusts the rate and region of convergence of the partial sum at
   \(q = 1\). The optimal choice is problem-specific; the

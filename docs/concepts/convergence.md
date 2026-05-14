@@ -64,6 +64,13 @@ Taylor expansions about \(t = 0\), so a polynomial base via
 
 ### Rule 2 — coefficient ergodicity
 
+Here "coefficient" means the **base coefficient** \(c_n\) in the
+assumed solution expression \(u(x) = \sum_n c_n B_n(x)\), *not* the
+\(q\)-coefficient \(u_k = \varphi.\text{coeff}(k)\). The two are
+related — each base coefficient is built up from contributions across
+the \(u_k\) — but the rule constrains the *base* coefficients, not the
+HAM iterates.
+
 For the deformation chain to *reach* every term of the expected
 solution expression, \(H(x)\) and the structure of \(L\) must be
 arranged so that no element of the base is identically zero in every

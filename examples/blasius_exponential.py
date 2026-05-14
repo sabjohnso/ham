@@ -72,9 +72,12 @@ How this example illustrates Liao's three fundamental rules
    library's clearest demonstration of Rule 1 — wrong base costs you
    orders.
 
-2. **Coefficient ergodicity.** Each HAM step produces u_k as a sum of
-   terms `polynomial(η) · e^(-k alpha η)`. Every base element is
-   reachable.
+2. **Coefficient ergodicity** (base coefficients in
+   `u = Σ_n c_n · B_n(η)` for the exponential base
+   `B_n = polynomial(η) · e^(-n alpha η)`, /not/ the q-coefficients
+   `u_k`; see Liao Rule 2 in `docs/concepts/convergence.md`). Each HAM
+   step produces u_k as a sum of terms
+   `polynomial(η) · e^(-k alpha η)`. Every base element is reachable.
 
 3. **Solution existence.** u_0 satisfies all three original BCs
    exactly. The deformation BCs are the homogeneous versions —

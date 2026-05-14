@@ -70,41 +70,42 @@ def homotopy_pade(
         )
 
     phi = solution.phi
-    coefficients = [phi.coeff(k) for k in range(solution.order + 1)]
+    series_coeffs = [phi.coeff(k) for k in range(solution.order + 1)]
     if hbar_value is not None:
         # Substitute ℏ /before/ building the Padé system so a degenerate
         # [L/M] choice at this specific ℏ surfaces as sympy's
         # NonInvertibleMatrixError rather than as a silent nan from
         # post-substituting a vanishing symbolic denominator.
-        coefficients = [c.subs(solution.problem.hbar, hbar_value) for c in coefficients]
+        series_coeffs = [c.subs(solution.problem.hbar, hbar_value) for c in series_coeffs]
 
     if denominator_degree == 0:
         return reduce(
             add,
-            coefficients[: numerator_degree + 1],
+            series_coeffs[: numerator_degree + 1],
             sp.Integer(0),
         )
     return _pade_value_at_q_one(
-        coefficients,
+        series_coeffs,
         numerator_degree,
         denominator_degree,
     )
 
 
 def _pade_value_at_q_one(
-    coefficients: list[sp.Expr],
+    series_coeffs: list[sp.Expr],
     numerator_degree: int,
     denominator_degree: int,
 ) -> sp.Expr:
     """Solve the Padé linear system for q_1..q_M, build p_0..p_L, return P(1)/Q(1).
 
-    The denominator coefficients solve the M-by-M system
+    `series_coeffs` are the input HAM q-coefficients `c_k = phi.coeff(k)`.
+    The Padé denominator coefficients `q_j` solve the M-by-M system
         Σ_{j=1..M} c_{k-j} q_j = -c_k    for k = L+1..L+M,
-    with q_0 = 1. The numerator is then
+    with q_0 = 1. The Padé numerator coefficients are then
         p_k = Σ_{j=0..min(k,M)} c_{k-j} q_j    for k = 0..L,
     and the value at q = 1 is `(p_0 + ... + p_L) / (1 + q_1 + ... + q_M)`.
     """
-    max_index = len(coefficients) - 1
+    max_index = len(series_coeffs) - 1
     size = denominator_degree
     matrix = sp.zeros(size, size)
     rhs = sp.zeros(size, 1)
@@ -112,8 +113,8 @@ def _pade_value_at_q_one(
         for col in range(size):
             idx = numerator_degree + row - col
             if 0 <= idx <= max_index:
-                matrix[row, col] = coefficients[idx]
-        rhs[row, 0] = -coefficients[numerator_degree + 1 + row]
+                matrix[row, col] = series_coeffs[idx]
+        rhs[row, 0] = -series_coeffs[numerator_degree + 1 + row]
     denominator_corrections = matrix.LUsolve(rhs)
     q_coeffs: list[sp.Expr] = [sp.Integer(1)] + [denominator_corrections[j, 0] for j in range(size)]
 
@@ -121,7 +122,7 @@ def _pade_value_at_q_one(
     for k in range(numerator_degree + 1):
         partial: sp.Expr = sp.Integer(0)
         for j in range(min(k, denominator_degree) + 1):
-            partial = partial + coefficients[k - j] * q_coeffs[j]
+            partial = partial + series_coeffs[k - j] * q_coeffs[j]
         p_coeffs.append(partial)
 
     numer = reduce(add, p_coeffs, sp.Integer(0))

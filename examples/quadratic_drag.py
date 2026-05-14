@@ -20,10 +20,12 @@ How this example illustrates Liao's three fundamental rules
    polynomials into polynomials, keeping every iterate in the chosen
    base.
 
-2. **Coefficient ergodicity.** Each HAM step raises the polynomial
-   degree by one (via the inverse of `L = d/dt`), so every power `t^k`
-   eventually appears in some `u_k(t)`. There is no "missing" base
-   element that the deformation chain cannot reach.
+2. **Coefficient ergodicity** (base coefficients in
+   `u = Σ_n c_n · t^n`, /not/ the q-coefficients `u_k`; see Liao Rule 2
+   in `docs/concepts/convergence.md`). Each HAM step raises the
+   polynomial degree by one (via the inverse of `L = d/dt`), so every
+   power `t^k` eventually appears in some `u_k(t)`. There is no
+   "missing" base element that the deformation chain cannot reach.
 
 3. **Solution existence.** `u_0 = 0` satisfies the original BC
    `v(0) = 0` exactly, so the deformation BCs can be the homogeneous

@@ -24,9 +24,11 @@ expansion about \(t = 0\) is
 1. **Solution expression.** \(\tanh(t)\) is analytic at \(t = 0\) with
    a pure-polynomial Taylor expansion. The polynomial base implied by
    \(L = d/dt\) and \(u_0 = 0\) reflects that structure.
-2. **Coefficient ergodicity.** Each HAM step raises the polynomial
-   degree by one (the inverse of \(d/dt\)), so every power \(t^k\)
-   eventually appears in some \(u_k(t)\). No structural blockers.
+2. **Coefficient ergodicity** (base coefficients in \(u = \sum_n c_n t^n\),
+   *not* the \(q\)-coefficients \(u_k\); see
+   [Rule 2](../concepts/convergence.md)). Each HAM step raises the
+   polynomial degree by one (the inverse of \(d/dt\)), so every power
+   \(t^k\) eventually appears in some \(u_k(t)\). No structural blockers.
 3. **Solution existence.** \(u_0 = 0\) satisfies the original BC
    \(v(0) = 0\) exactly, so the deformation BCs are the homogeneous
    \(u_k(0) = 0\) for \(k \ge 1\) — and \(L = d/dt\) with that BC has

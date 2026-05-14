@@ -144,3 +144,11 @@ laws (linearity of `L`, Cauchy structure of `N`, causality in `q`, etc.)
 and Hypothesis property tests assert those laws directly. Worked examples
 under `tests/examples/` pin end-to-end output against closed-form Taylor
 expansions.
+
+## Continuous integration
+
+`.github/workflows/test.yml` runs on push to `main` and on pull requests.
+The job installs Poetry via `pipx`, caches the Poetry virtualenv, then
+runs `ruff check`, `ruff format --check`, `mypy --strict`, and `pytest`
+against Python 3.12 on `ubuntu-latest`. A green CI run is the baseline
+expectation before merging any PR.

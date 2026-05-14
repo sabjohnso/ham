@@ -11,8 +11,9 @@ import sympy as sp
 from ham.nonlinear import NonlinearOperator
 from ham.series import QSeries
 from hypothesis import given
+from hypothesis import strategies as st
 
-from tests.strategies import X, polynomial_in_x, qseries_polynomial_coeffs
+from tests.strategies import MAX_ORDER, X, polynomial_in_x, qseries_polynomial_coeffs
 
 U = sp.Function("u")
 """The dependent-function symbol used across these tests."""
@@ -187,25 +188,37 @@ def test_apply_series_constant_compatibility(phi: QSeries) -> None:
         assert result.coeff(k) == 0
 
 
-@given(phi=qseries_polynomial_coeffs())
-def test_apply_series_causality_in_q(phi: QSeries) -> None:
-    """N[phi].coeff(k) depends only on phi.coeff(0..k) for k < phi.order.
+@given(
+    phi=qseries_polynomial_coeffs(),
+    perturbation=polynomial_in_x(),
+    k_raw=st.integers(min_value=0, max_value=MAX_ORDER),
+)
+def test_apply_series_causality_in_q(phi: QSeries, perturbation: sp.Expr, k_raw: int) -> None:
+    """For every k in [0, phi.order], perturbing phi.coeff(k) leaves
+    N[phi].coeff(j) invariant for all j < k.
 
-    Perturbing phi.coeff(phi.order) by an arbitrary expression must leave
-    every result coefficient with index strictly less than phi.order
-    unchanged (Cauchy structure: high-q tail cannot bleed downwards).
+    The strict form of Cauchy causality: high-q content cannot bleed
+    downwards into any lower coefficient of N[phi]. The compiler is
+    built on Cauchy products, coefficient-wise differentiation, and
+    coefficient-wise integration — all of which preserve causality —
+    so this property should hold for every polynomial-in-u N the
+    compiler handles. The chosen N exercises Cauchy product (u^2),
+    product with derivative (u·u'), and pure derivative (u'), so all
+    three causality paths are covered by one Hypothesis draw.
     """
-    expr = U(X) ** 2 + U(X)
+    k = min(k_raw, phi.order)
+    expr = U(X) ** 2 + U(X) * U(X).diff(X) + U(X).diff(X)
     n_op = NonlinearOperator(expr=expr, dependent=U, indep=X)
+
     result_orig = n_op.apply_series(phi)
 
-    perturbed = [phi.coeff(k) for k in range(phi.order + 1)]
-    perturbed[phi.order] = perturbed[phi.order] + sp.Integer(999) * X
-    phi_perturbed = QSeries(perturbed, order=phi.order)
+    new_coeffs = [phi.coeff(i) for i in range(phi.order + 1)]
+    new_coeffs[k] = new_coeffs[k] + perturbation
+    phi_perturbed = QSeries(new_coeffs, order=phi.order)
     result_perturbed = n_op.apply_series(phi_perturbed)
 
-    for k in range(phi.order):
-        assert sp.expand(result_orig.coeff(k) - result_perturbed.coeff(k)) == 0
+    for j in range(k):
+        assert sp.expand(result_orig.coeff(j) - result_perturbed.coeff(j)) == 0
 
 
 def test_apply_series_sin_of_u_rejected() -> None:

@@ -9,7 +9,7 @@ summation or via Padé.
 
 ## What you get
 
-- A tiny algebraic core in seven modules.
+- A tiny algebraic core in eight modules.
 - End-to-end worked examples that pin HAM output against closed-form
   Taylor expansions of `tanh(t)` and the sigmoid `1/(1 + e^{-t})`.
 - A convergence-diagnostics toolkit: residual, L² / discrete norms,
@@ -74,7 +74,7 @@ Python ≥ 3.12, managed with [Poetry](https://python-poetry.org/):
 ```sh
 poetry install            # runtime + dev dependencies
 poetry install --with docs  # adds mkdocs/material/mkdocstrings
-poetry run pytest         # 166 tests, ~50 s
+poetry run pytest         # 252 tests, ~2 min
 poetry run mkdocs serve   # local docs preview at http://127.0.0.1:8000
 ```
 

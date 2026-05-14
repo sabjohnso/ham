@@ -33,7 +33,7 @@ Python ≥ 3.12, managed with Poetry.
 
 ```sh
 poetry install                                  # runtime + dev dependencies
-poetry run pytest                               # 166 tests, ~50s
+poetry run pytest                               # 252 tests, ~2 min
 ```
 
 ## Quick example: the logistic equation

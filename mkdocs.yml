@@ -101,6 +101,7 @@ nav:
       - ham.solver: api/solver.md
       - ham.diagnostics: api/diagnostics.md
       - ham.pade: api/pade.md
+      - ham.contracts: api/contracts.md
   - Design notes:
       - design/index.md
       - Tenets: design/tenets.md

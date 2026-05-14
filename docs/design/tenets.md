@@ -50,8 +50,10 @@ arranged so that's true.
 
 **Where you see it.**
 
-- The seven modules under `ham/` correspond exactly to the eight
-  stages (Stage 7 is the `examples/` directory, not a `ham/` module).
+- The eight modules under `ham/` correspond to the build stages
+  (Stage 7 is the `examples/` directory, not a `ham/` module; the
+  later `ham.contracts` checker module was added after the staged
+  build, as a defensive-correctness extension).
   Each module's surface is small: usually one or two top-level
   functions or classes plus their methods.
 - [`ham.solver.solve_step`](../api/solver.md) composes

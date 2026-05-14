@@ -5,7 +5,7 @@ Each page is auto-extracted from its module's docstrings via
 documented in [Design notes: Stage history](../design/stages.md);
 the dependency order is bottom-up.
 
-## The seven modules
+## The eight modules
 
 ### Algebraic core
 
@@ -28,6 +28,12 @@ the dependency order is bottom-up.
 | --- | --- | --- |
 | [`ham.diagnostics`](diagnostics.md) | Residual, two flavors of L² norm, Liao's ℏ-curve, and grid-search parameter optimisation (single- and multi-parameter). Pure functional core — no plotting, no I/O. | `residual`, `residual_l2_squared`, `residual_discrete_sum_of_squares`, `hbar_curve_at`, `optimal_hbar`, `optimal_parameters` |
 | [`ham.pade`](pade.md) | Homotopy-Padé acceleration of the partial sum in \(q\), evaluated at \(q = 1\). | `homotopy_pade` |
+
+### Algebraic contracts
+
+| Module | Responsibility | Headline surface |
+| --- | --- | --- |
+| [`ham.contracts`](contracts.md) | Opt-in algebraic-contract checkers users can call at problem-construction time. Linearity of \(L\) and consistency of \(u_0\) with the original boundary conditions are both contract-only on the data types; this module exposes them as runtime assertions raising `ValueError` subclasses. | `verify_linearity`, `verify_initial_guess`, `LinearityViolation`, `InitialGuessViolation` |
 
 ## What you won't find here
 

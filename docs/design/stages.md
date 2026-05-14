@@ -1,10 +1,14 @@
 # Stage history
 
-The library was built in eight stages over four days
-(2026-05-08 through 2026-05-12), each a fully-tested unit of
-functionality with its own commit chain and design conversation.
-This page is a distilled timeline. The detailed per-stage record
-lives in the project's private PLAN.org.
+The library's algebraic core was built in eight stages
+(2026-05-08 through 2026-05-12); five further stages extended
+the worked-example surface and the Blasius pipeline through
+2026-05-13. A post-build defensive-correctness pass on
+2026-05-13/14 added the [`ham.contracts`](../api/contracts.md)
+module and tightened two test/library guards.
+
+Each entry below is a distilled timeline. The detailed per-stage
+record lives in the project's private PLAN.org.
 
 ## Stage 1 — Truncated power series in q
 
@@ -163,21 +167,123 @@ in \(q\), evaluate at \(q = 1\).
   \(1/(1-x)\) from two HAM coefficients on \(u' = u^2, u(0) = 1\).
   The headline result.
 
+## Stage 9 — Volterra integro-differential support
+
+[`ham.nonlinear`](../api/nonlinear.md) (Integral branch) +
+[`examples/volterra.py`](../examples/volterra.md)
+
+The first stage where the `NonlinearOperator` compiler grew a new
+node type rather than refining an existing one.
+
+- **Integral branch in `_compile_integral`** handles
+  `sp.Integral(f(u, ...), (s, 0, indep))` — the canonical Volterra
+  form. Lower bound must be 0; upper bound must be the indep
+  variable; the integrand must depend on the dummy only through
+  `dependent(dummy)`. Other shapes raise `NotImplementedError`.
+- **Substrate identity preserved.** The new branch is a thin
+  wrapper around the existing `map_coeffs` machinery — the
+  integro-differential character flows through the same Cauchy
+  arithmetic as polynomial-\(N\), with no algebra invented.
+- **Worked example.** Volterra single-species population model
+  with `u' = κ u (1 - u - ∫_0^t u ds)`. HAM polynomial degree at
+  order \(M\) is *2M* for this problem (one degree from \(L^{-1}\),
+  one from the integral). The residual norm is /not/ strictly
+  monotone in \(M\) here; the test honestly relaxes to "M=6 at
+  least 100× smaller than M=1".
+
+## Stage 10 — Blasius (truncated-domain, polynomial basis)
+
+[`examples/blasius.py`](../examples/blasius.md)
+
+The first worked example where \(\hbar = -1\) /diverges/ — the
+pedagogical bite of Liao's Rule of Solution Expression. The
+asymptotic BC \(f'(\infty) = 1\) is replaced with
+\(f'(\eta_{\max}) = 1\) at a large finite cap, so library
+support for asymptotic BCs is still deferred.
+
+- **u_0 = η²/(2 η_max)** satisfies all three truncated BCs by
+  construction.
+- **Validity gate is closeness to Howarth's f''(0) ≈ 0.4696**,
+  not L² residual norm — the latter has a false plateau at small
+  positive \(\hbar\) where the partial sum collapses near \(u_0\)
+  but the residual is tiny.
+
+## Stage 11 — Blasius via exponential basis (true asymptotic BC)
+
+[`examples/blasius_exponential.py`](../examples/blasius-exponential.md)
+
+The Liao-canonical setup: \(L = d^3/d\eta^3 - \alpha^2 \cdot d/d\eta\),
+\(u_0 = \eta - 1/\alpha + e^{-\alpha\eta}/\alpha\), and a custom
+inverter that handles the resonant `η·exp(-αη)` RHS.
+
+- **`LinearOperator` extended to accept `BoundaryCondition(point=sp.oo)`**.
+  Sympy's `dsolve` resolves the asymptotic BC for cheap RHSes; a
+  zero-free-constants workaround handles the resonant case.
+- **\(\alpha = 1\) (fixed) gave \(|f''(0) - \text{Howarth}| \approx 5\times 10^{-3}\)** at \(M = 2\).
+
+## Stage 12 — Multi-parameter optimisation
+
+[`ham.diagnostics.optimal_parameters`](../api/diagnostics.md) +
+two-parameter (ℏ, α) tuning in
+[`examples/blasius_exponential.py`](../examples/blasius-exponential.md)
+
+\(\alpha\) becomes a sympy symbol carried through the solve;
+`optimal_parameters` generalises `optimal_hbar` to grid-search
+substitution dictionaries.
+
+- **At \(M = 2\) the 2D optimum gave error ≈ 4×10⁻⁴** — an order
+  of magnitude tighter than the Stage 11 single-parameter best.
+
+## Stage 13 — Closed-form basis-aware Blasius inverter
+
+[`examples/blasius_inverter.py`](../examples/blasius-exponential.md#the-closed-form-basis-aware-inverter-stage-13)
+
+The Stage-11 `sympy.dsolve` inverter scaled poorly with \(M\) (M=3
+≈ 12 s, M=4 prohibitive). Stage 13 replaces it with a decompose-
+and-cache strategy that brings M=3 down to ~3 s and unlocks M=4.
+
+- **Decompose** RHS into basis terms \(c \cdot \eta^j \cdot e^{-k\alpha\eta}\).
+- **Cache** \(L^{-1}\) of each basis element via `functools.cache`.
+- **Assemble** the inverse by linearity.
+- **At \(M = 3\) the 2D optimum gives \(|error| \approx 1.6\times 10^{-4}\)** —
+  six times tighter than the Stage 12 \(M = 2\) best, and over
+  100× tighter than the polynomial-basis Stage 10 \(M = 5\) best.
+
+## Post-build evolution (2026-05-13/14)
+
+Driven by a comprehensive review documented in `Review.org`
+at the project root. Five defensive-correctness items landed
+serially:
+
+| # | Concern | Commit | Effect |
+| --- | --- | --- | --- |
+| 1 | Integral branch silently miscompiled non-canonical integrands | `7c747b5` | `_compile_integral` now refuses integrands with explicit `indep` dependence outside `dependent(dummy)` |
+| 2 | Causality property test only perturbed the top coefficient | `c8c3a85` | Strict per-index Hypothesis property test (compiler was already causal; the law is now asserted) |
+| 3 | No CI pipeline | `f9a450e` | GitHub Actions runs ruff / format / mypy / pytest on push and PR |
+| 4 | Linearity of `L.action` was contract-only | `8d0886a` | New module [`ham.contracts`](../api/contracts.md) with `verify_linearity` + `LinearityViolation(ValueError)` |
+| 5 | `HamProblem` did not validate `u_0` against original BCs | `5e9590f` | `ham.contracts.verify_initial_guess` + `InitialGuessViolation`; each worked example exposes `ORIGINAL_BCS` |
+
+The post-build pass added one new public module
+(`ham.contracts`), no new examples, and no breaking changes.
+Cumulative test count grew 226 → 252.
+
 ## Where to go next
 
-Three obvious extension directions are *not yet implemented* and
-remain in scope:
+The Stage-1 to Stage-13 ladder has stabilised; remaining
+extension directions live above the current public surface:
 
-- **Volterra worked example.** Polynomial \(N\), no library changes
-  needed — fits the existing `examples/<name>.py` template.
-- **Blasius BVP.** Requires extending `LinearOperator.bcs` to admit
-  asymptotic conditions like \(f'(\infty) = 1\), and probably a
-  dedicated inverter that knows how to solve the resulting BVP.
-- **Multi-point Padé and Hermite-Padé.** Generalisations of Stage 8
-  that compose on top of `HamSolution.phi` without touching the
-  upstream stages.
+- **Multi-point Padé and Hermite-Padé.** Generalisations of
+  Stage 8 that compose on top of `HamSolution.phi` without
+  touching the upstream stages.
+- **More worked examples** in other base classes
+  (trigonometric basis; mixed polynomial-exponential).
+- **Additional contracts.** [`ham.contracts`](../api/contracts.md)
+  has room for nonlinear-polynomial form verification and
+  invertibility-on-image checks for `L`; see the module
+  docstring's extension policy.
 
-Each follows the pattern Stages 1-8 established: a design conversation
-in the PR description, sub-stages with red-green-refactor commits,
-algebraic identities pinned by property tests, and PLAN.org-style
-record of what was decided and why.
+Each new direction follows the pattern Stages 1-13 established:
+a design conversation in the PR description, sub-stages with
+red-green-refactor commits, algebraic identities pinned by
+property tests, and PLAN.org-style record of what was decided
+and why.

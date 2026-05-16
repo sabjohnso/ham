@@ -70,12 +70,23 @@ class NonlinearOperator:
         return self._compile(self.expr, phi)
 
     def _compile(self, node: sp.Expr, phi: QSeries) -> QSeries:
-        """Compile a sympy node into a QSeries against phi (recursive)."""
+        """Compile a sympy node into a QSeries against phi (recursive).
+
+        All leaf constructions thread `phi.backend` through:
+        identity-like coefficients (zero, one) come from `backend.zero()`
+        / `backend.one()`; u-free constants are lifted into `C` via
+        `backend.lift_xonly` before being stored. The sympy backend
+        makes those bridges no-ops; the spectral backend (S5b+) reuses
+        the same control flow without further changes here.
+        """
+        backend = phi.backend
         if not node.has(self.dependent):
             # `.doit()` evaluates any symbolic Integral / Derivative subnodes
             # in the u-free path so they reach the QSeries as concrete values
             # rather than as unevaluated sympy objects in coefficient slot 0.
-            return QSeries.constant(node.doit(), order=phi.order)
+            return QSeries.constant(
+                backend.lift_xonly(node.doit()), order=phi.order, backend=backend
+            )
         if node == self.dependent(self.indep):
             return phi
         if isinstance(node, sp.Derivative):
@@ -83,19 +94,19 @@ class NonlinearOperator:
         if isinstance(node, sp.Integral):
             return self._compile_integral(node, phi)
         if isinstance(node, sp.Add):
-            result = QSeries.zero(order=phi.order)
+            result = QSeries.zero(order=phi.order, backend=backend)
             for arg in node.args:
                 result = result + self._compile(arg, phi)
             return result
         if isinstance(node, sp.Mul):
-            result = QSeries.constant(sp.Integer(1), order=phi.order)
+            result = QSeries.constant(backend.one(), order=phi.order, backend=backend)
             for arg in node.args:
                 factor = self._compile(arg, phi)
                 result = (result * factor).trunc(phi.order)
             return result
         if isinstance(node, sp.Pow) and isinstance(node.exp, sp.Integer) and node.exp >= 0:
             base = self._compile(node.base, phi)
-            result = QSeries.constant(sp.Integer(1), order=phi.order)
+            result = QSeries.constant(backend.one(), order=phi.order, backend=backend)
             for _ in range(int(node.exp)):
                 result = (result * base).trunc(phi.order)
             return result
@@ -131,7 +142,7 @@ class NonlinearOperator:
                 f"symbolically before constructing the NonlinearOperator."
             )
         k = int(node.variable_count[0][1])
-        return phi.map_coeffs(lambda c: sp.diff(c, self.indep, k))
+        return phi.map_coeffs(lambda c: phi.backend.diff_x(c, k))
 
     def _compile_integral(self, node: sp.Integral, phi: QSeries) -> QSeries:
         """Compile an `Integral(integrand, (dummy, 0, indep))` node into
@@ -204,6 +215,4 @@ class NonlinearOperator:
             )
         integrand_at_indep = node.function.subs(dummy, self.indep)
         integrand_qseries = self._compile(integrand_at_indep, phi)
-        return integrand_qseries.map_coeffs(
-            lambda c: sp.integrate(c, (self.indep, sp.Integer(0), self.indep))
-        )
+        return integrand_qseries.map_coeffs(phi.backend.integrate_x)

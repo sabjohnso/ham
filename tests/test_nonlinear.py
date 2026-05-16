@@ -8,6 +8,7 @@ polynomial regime) is 3b/3c. Transcendental rejection is 3d.
 
 import pytest
 import sympy as sp
+from ham.backend import SympyBackend
 from ham.nonlinear import NonlinearOperator
 from ham.series import QSeries
 from hypothesis import given
@@ -517,3 +518,56 @@ def test_apply_series_integral_error_message_names_indep_variable() -> None:
     with pytest.raises(NotImplementedError) as exc_info:
         n_op.apply_series(phi)
     assert "x" in str(exc_info.value)
+
+
+# --- Stage S2: apply_series dispatches through phi.backend ---------------
+
+
+def test_apply_series_propagates_phi_backend() -> None:
+    """apply_series returns a Series whose backend is phi.backend.
+
+    Until S2, _compile hard-coded `QSeries.zero` / `QSeries.constant`
+    (carrying the default `SympyBackend` instance) for every internal
+    construction, so the result's backend was the default — not whatever
+    backend the caller's `phi` carried. After S2 the construction
+    threads `phi.backend` through every leaf, which is the precondition
+    for SHAM in S7 where `phi` will live over a spectral backend.
+    """
+    alt_backend = SympyBackend(X)  # same field semantics, distinct identity
+    phi = QSeries([X, X**2], order=1, backend=alt_backend)
+
+    expr_in_u = U(X) ** 2 + U(X).diff(X)
+    n_op = NonlinearOperator(expr=expr_in_u, dependent=U, indep=X)
+
+    result = n_op.apply_series(phi)
+
+    assert result.backend is alt_backend
+
+
+@given(phi=qseries_polynomial_coeffs())
+def test_apply_series_commutes_with_apply_scalar_polynomial_n(phi: QSeries) -> None:
+    """[q^k] N.apply_series(phi) == [q^k] N.apply_scalar(Σ phi.coeff(j) q^j).
+
+    Liao's commuting diagram for polynomial N: applying N coefficient-by-
+    coefficient through `apply_series` equals applying N scalar-wise to
+    phi-as-polynomial-in-q and projecting onto q^k. This is the property
+    that makes `apply_series` a faithful evaluation of N on the homotopy
+    series. Promoted to an explicit test so S5b's parametrised property
+    suite can re-use the law against any backend whose `apply_scalar`
+    path is unavailable (or against the sympy-scalar SpectralBackend
+    that S5b will introduce).
+    """
+    q = sp.Symbol("q")
+    expr_in_u = U(X) ** 2 + U(X).diff(X) + sp.Integer(3)
+    n_op = NonlinearOperator(expr=expr_in_u, dependent=U, indep=X)
+
+    u_in_x_and_q = sum(
+        (phi.coeff(k) * q**k for k in range(phi.order + 1)),
+        sp.Integer(0),
+    )
+    expected_in_q = sp.expand(n_op.apply_scalar(u_in_x_and_q))
+    actual_series = n_op.apply_series(phi)
+
+    for k in range(phi.order + 1):
+        expected_q_k = expected_in_q.coeff(q, k)
+        assert sp.expand(actual_series.coeff(k) - expected_q_k) == 0

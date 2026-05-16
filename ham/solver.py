@@ -23,6 +23,7 @@ from operator import add
 
 import sympy as sp
 
+from ham.backend import SympyBackend
 from ham.deformation import HamProblem, chi_m
 from ham.series import QSeries
 
@@ -77,11 +78,18 @@ def solve(problem: HamProblem, order: int) -> HamSolution:
     m = 1..order, extends with u_m = solve_step(problem, phi_{m-1}, m).
     The ℏ symbol in `problem.hbar` is carried through every coefficient
     so the result can be evaluated at any ℏ without re-running the loop.
+
+    The constructed `phi` carries a `SympyBackend(problem.L.var)` so
+    that `N.apply_series`'s coefficient-wise diff_x / integrate_x
+    operate w.r.t. the problem's independent variable rather than the
+    `QSeries` default (which assumes `sp.Symbol("x")`). Examples like
+    Volterra (`t`) and Blasius (`eta`) depend on this.
     """
     if order < 0:
         raise ValueError(f"solve requires order >= 0; got order = {order}.")
+    backend = SympyBackend(problem.L.var)
     coeffs: list[sp.Expr] = [sp.expand(problem.u0)]
     for m in range(1, order + 1):
-        phi = QSeries(coeffs, order=m - 1)
+        phi = QSeries(coeffs, order=m - 1, backend=backend)
         coeffs.append(solve_step(problem, phi, m))
-    return HamSolution(problem=problem, phi=QSeries(coeffs, order=order))
+    return HamSolution(problem=problem, phi=QSeries(coeffs, order=order, backend=backend))

@@ -27,7 +27,7 @@ U = sp.Function("u")
 HBAR = sp.Symbol("hbar")
 
 
-def _ivp_operator() -> LinearOperator:
+def _ivp_operator() -> LinearOperator[sp.Expr]:
     """L = d/dx with homogeneous BC u(0) = 0."""
     return LinearOperator(
         var=X,

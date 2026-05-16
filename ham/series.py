@@ -23,15 +23,17 @@ import sympy as sp
 from ham.backend import Backend, SympyBackend
 
 
-class _SupportsCoefficientArith(Protocol):
+class SupportsCoefficientArith(Protocol):
     """Per-element arithmetic the coefficient substrate must support.
 
     Both `sympy.Expr` and `numpy.ndarray` satisfy this structurally;
-    declaring it explicitly lets `Series[C]` typecheck under mypy
-    strict by giving the TypeVar a bound that names the operations
-    the methods actually use. Return types are `Any` because the
-    concrete result type (sympy.Expr, numpy.ndarray) collapses back
-    to `C` via Any-bivariance at the call sites.
+    declaring it explicitly lets generic types over the coefficient
+    substrate (`Series[C]`, `LinearOperator[C]`, the verifier helpers
+    in `ham.contracts`) typecheck under mypy strict by giving the
+    TypeVar a bound that names the operations actually used. Return
+    types are `Any` because the concrete result type (sympy.Expr,
+    numpy.ndarray) collapses back to `C` via Any-bivariance at the
+    call sites.
     """
 
     def __add__(self, other: object, /) -> Any: ...
@@ -41,7 +43,7 @@ class _SupportsCoefficientArith(Protocol):
     def __truediv__(self, other: object, /) -> Any: ...
 
 
-class Series[C: _SupportsCoefficientArith]:
+class Series[C: SupportsCoefficientArith]:
     """A truncated formal power series in q with coefficients in C.
 
     The substrate `C` (typically `sympy.Expr` for symbolic HAM or

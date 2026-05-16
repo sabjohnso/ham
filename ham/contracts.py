@@ -32,12 +32,13 @@ Currently exposed:
     iterates) yields a partial sum that still satisfies them.
 """
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 import sympy as sp
 
 from ham.deformation import HamProblem
 from ham.operator import BoundaryCondition, LinearOperator
+from ham.series import SupportsCoefficientArith
 
 
 class LinearityViolation(ValueError):  # noqa: N818  -- domain term, not "Error"
@@ -72,20 +73,35 @@ class LinearityViolation(ValueError):  # noqa: N818  -- domain term, not "Error"
         self.rhs = rhs
 
 
-def verify_linearity(
-    L: LinearOperator,  # noqa: N803  -- Liao's notation
-    samples: Iterable[tuple[sp.Expr, sp.Expr, sp.Expr, sp.Expr]],
+def _sympy_equal(a: sp.Expr, b: sp.Expr) -> bool:
+    """Default linearity comparator for the sympy backend: `sp.expand(a-b) == 0`.
+
+    Lives at the verification site (not on `Backend` or `LinearOperator`)
+    per PLAN.org D-4 — `LinearOperator` stays substrate-agnostic, and
+    "close enough" is the caller's choice. The default reproduces the
+    pre-S3 behaviour for back-compat with all existing call sites.
+    """
+    return bool(sp.expand(a - b) == 0)
+
+
+def verify_linearity[C: SupportsCoefficientArith](
+    L: LinearOperator[C],  # noqa: N803  -- Liao's notation
+    samples: Iterable[tuple[C, C, C, C]],
+    *,
+    equal: Callable[[C, C], bool] = _sympy_equal,
 ) -> None:
     """Assert L[alpha*u + beta*v] == alpha*L[u] + beta*L[v] on each sample.
 
-    Each sample is a four-tuple `(u, v, alpha, beta)` of sympy
-    expressions. Returns `None` when every sample satisfies the law;
-    raises `LinearityViolation` on the first failing sample, with
-    that sample and the computed LHS / RHS attached to the exception.
+    Each sample is a four-tuple `(u, v, alpha, beta)` of coefficient
+    values. Returns `None` when every sample satisfies the law; raises
+    `LinearityViolation` on the first failing sample, with that sample
+    and the computed LHS / RHS attached to the exception.
 
-    Equality is decided symbolically via `sp.expand(lhs - rhs) == 0`.
-    Callers needing a stricter or looser comparator can call
-    `L.apply` directly and compare via their own equality predicate.
+    Equality is decided by the injected `equal` comparator (PLAN.org D-4):
+    the default `_sympy_equal` reproduces the pre-S3 `sp.expand(a-b)==0`
+    behaviour, so sympy callers can omit it. SHAM call sites (S6+) pass
+    `np.allclose` for float-spectral and a coefficient-wise sp.expand
+    closure for the sympy-spectral scalar.
 
     An empty `samples` iterable is a no-op (vacuous truth), matching
     Hypothesis-style usage where a parametrised sample set might be
@@ -95,7 +111,7 @@ def verify_linearity(
         u, v, alpha, beta = sample
         lhs = L.apply(alpha * u + beta * v)
         rhs = alpha * L.apply(u) + beta * L.apply(v)
-        if sp.expand(lhs - rhs) != 0:
+        if not equal(lhs, rhs):
             raise LinearityViolation(sample=sample, lhs=lhs, rhs=rhs)
 
 

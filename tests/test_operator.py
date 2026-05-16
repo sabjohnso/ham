@@ -12,7 +12,12 @@ not break linearity en route.
 """
 
 import sympy as sp
-from ham.operator import BoundaryCondition, LinearOperator, antiderivative
+from ham.operator import (
+    BoundaryCondition,
+    LinearOperator,
+    antiderivative,
+    sympy_dsolve_inverter,
+)
 from ham.series import QSeries
 from hypothesis import given
 from hypothesis import strategies as st
@@ -88,7 +93,7 @@ def test_apply_series_preserves_linearity(
 # --- Inversion (Stage 2b): BCs + canonical-case antiderivative -------------
 
 
-def _canonical_ivp() -> LinearOperator:
+def _canonical_ivp() -> LinearOperator[sp.Expr]:
     """L = d/dx with u(0) = 0, no inverter — exercises the dsolve default."""
     return LinearOperator(
         var=X,
@@ -215,3 +220,43 @@ def test_dsolve_default_accepts_asymptotic_bc_at_infinity() -> None:
     rhs = sp.exp(-2 * X)
     expected = -sp.Rational(1, 6) + sp.exp(-X) / sp.Integer(3) - sp.exp(-2 * X) / sp.Integer(6)
     assert sp.simplify(op.invert(rhs) - expected) == 0
+
+
+# --- Stage S3: sympy_dsolve_inverter as a public factory ----------------
+
+
+def test_sympy_dsolve_inverter_factory_matches_op_invert() -> None:
+    """`sympy_dsolve_inverter(var, action, bcs)` matches `LinearOperator.invert`'s default.
+
+    The previously-private `_dsolve_invert` is promoted to a public factory
+    so S6's `spectral_inverter` can be wired in the same shape — caller
+    constructs an inverter callable from the (var, action, bcs) triple and
+    passes it as `inverter=` on the LinearOperator. The same triple used
+    against the sympy factory must reproduce the dsolve fallback exactly,
+    or the public factory is not the same operation as the private default.
+    """
+    bcs = (BoundaryCondition(point=sp.Integer(0), derivative_order=0),)
+    factory_inverter = sympy_dsolve_inverter(X, _diff_x, bcs)
+    op_with_default = LinearOperator(var=X, action=_diff_x, bcs=bcs)
+    rhs = X**2 + sp.Integer(3) * X + sp.Integer(5)
+    assert sp.expand(factory_inverter(rhs) - op_with_default.invert(rhs)) == 0
+
+
+def test_sympy_dsolve_inverter_explicit_use_matches_default_fallback() -> None:
+    """`inverter=sympy_dsolve_inverter(...)` matches the no-inverter default.
+
+    Documents the intended migration path: a caller who wants to surface
+    the inverter (e.g., for testing, profiling, or swapping in a custom
+    one later) constructs the factory and passes it explicitly; the
+    behaviour matches the implicit dsolve fallback.
+    """
+    bcs = (BoundaryCondition(point=sp.Integer(0), derivative_order=0),)
+    op_explicit = LinearOperator(
+        var=X,
+        action=_diff_x,
+        bcs=bcs,
+        inverter=sympy_dsolve_inverter(X, _diff_x, bcs),
+    )
+    op_default = LinearOperator(var=X, action=_diff_x, bcs=bcs)
+    rhs = X**3 - sp.Integer(2) * X
+    assert sp.expand(op_explicit.invert(rhs) - op_default.invert(rhs)) == 0

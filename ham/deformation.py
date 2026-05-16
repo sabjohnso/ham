@@ -45,7 +45,7 @@ class HamProblem:
     reads as the math; PEP8 considerations are subordinated to that.
     """
 
-    L: LinearOperator
+    L: LinearOperator[sp.Expr]
     N: NonlinearOperator
     H: sp.Expr
     hbar: sp.Expr

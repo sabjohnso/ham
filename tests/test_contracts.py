@@ -127,6 +127,41 @@ def test_verify_linearity_message_names_sample_and_sides() -> None:
     assert "beta" in msg
 
 
+def test_verify_linearity_accepts_custom_equal_comparator() -> None:
+    """verify_linearity accepts an `equal` kwarg overriding the default sympy comparator.
+
+    Per PLAN.org D-4, equality lives at the verification site, not on the
+    Backend or LinearOperator. The default is sympy-flavoured (sp.expand-
+    based); spectral backends (S5b+) inject their own (np.allclose-style)
+    at the call site. To prove the kwarg is honoured we use a deliberately
+    permissive comparator (`always_equal`) that hides a real linearity
+    violation — if verify_linearity were still hard-coded to sp.expand it
+    would raise regardless and the test would fail.
+    """
+    L = LinearOperator(var=X, action=_square_action)  # noqa: N806
+    sample = (X, sp.Integer(1), sp.Integer(2), sp.Integer(3))
+
+    with pytest.raises(LinearityViolation):
+        verify_linearity(L, [sample])
+
+    def always_equal(a: sp.Expr, b: sp.Expr) -> bool:
+        return True
+
+    verify_linearity(L, [sample], equal=always_equal)
+
+
+def test_verify_linearity_default_equal_is_sympy_expand_based() -> None:
+    """The default `equal` reproduces the pre-S3 sp.expand-based behaviour.
+
+    Pins the back-compat invariant: callers who don't pass `equal=...`
+    keep the exact behaviour of `sp.expand(lhs - rhs) == 0` they had
+    before D-4 made the comparator injectable.
+    """
+    L = LinearOperator(var=X, action=_diff_x)  # noqa: N806
+    # diff(2*X + 3*1) = 2 = 2*diff(X) + 3*diff(1) = 2*1 + 0 = 2, exact match.
+    verify_linearity(L, [(X, sp.Integer(1), sp.Integer(2), sp.Integer(3))])
+
+
 def test_verify_linearity_passes_on_quadratic_drag_example() -> None:
     """The quadratic-drag worked example's L = d/dt is linear; documentary check.
 

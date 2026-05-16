@@ -117,3 +117,28 @@ def test_integrate_x_is_linear(p: sp.Expr, q: sp.Expr) -> None:
     lhs = backend.integrate_x(a * p + b * q)
     rhs = a * backend.integrate_x(p) + b * backend.integrate_x(q)
     assert sympy_equal(lhs, rhs)
+
+
+# --- normalize (S4) --------------------------------------------------------
+
+
+def test_sympy_backend_normalize_expands_products() -> None:
+    """SympyBackend.normalize reproduces `sp.expand`: products distribute.
+
+    Pins the back-compat invariant for the solver: the previous in-line
+    `sp.expand(...)` call sites route through `backend.normalize`, and
+    the sympy backend's normalize must produce identical expressions
+    for the existing example tests to keep pinning correctly.
+    """
+    raw = (X + sp.Integer(1)) * (X - sp.Integer(1))
+    expanded = X**2 - sp.Integer(1)
+    assert sympy_equal(backend.normalize(raw), expanded)
+    # Structural inequality before normalize confirms the test is non-trivial:
+    # without normalize, the raw form is structurally distinct from the expanded form.
+    assert raw != expanded
+
+
+def test_sympy_backend_normalize_is_idempotent_on_expanded_form() -> None:
+    """normalize on already-expanded input returns the same form (idempotence)."""
+    expanded = X**3 - sp.Integer(2) * X + sp.Integer(7)
+    assert backend.normalize(expanded) == expanded

@@ -8,7 +8,11 @@ A `Backend[C]` packages the operations that `Series[C]` and
   - lifting: `lift_xonly(expr)` turns an x-only `sympy.Expr` into a
     coefficient (identity for the sympy backend, evaluation on grid
     nodes for the spectral backend);
-  - x-calculus: `diff_x(c, k)` and `integrate_x(c)`.
+  - x-calculus: `diff_x(c, k)` and `integrate_x(c)`;
+  - canonicalisation: `normalize(c)` returns a canonical form of `c`
+    (`sp.expand` for sympy so the solver's output stays in a form
+    downstream tests pin against; identity for the spectral
+    backend since numpy arrays have no canonical-form notion).
 
 The Backend does NOT carry an equality comparator: per PLAN.org D-4,
 equality is supplied at the verification site (sp.expand for sympy,
@@ -42,6 +46,7 @@ class Backend[C]:
     lift_xonly: Callable[[sp.Expr], C]
     diff_x: Callable[[C, int], C]
     integrate_x: Callable[[C], C]
+    normalize: Callable[[C], C]
 
 
 def SympyBackend(indep: sp.Symbol) -> Backend[sp.Expr]:  # noqa: N802 -- constructor-style factory
@@ -51,7 +56,9 @@ def SympyBackend(indep: sp.Symbol) -> Backend[sp.Expr]:  # noqa: N802 -- constru
     identity. `integrate_x` is the definite integral from 0 to `indep`
     so the antiderivative vanishes at the lower bound by construction
     (matching the SHAM convention and the Volterra integral that
-    `NonlinearOperator._compile_integral` uses).
+    `NonlinearOperator._compile_integral` uses). `normalize` is
+    `sp.expand` so the solver's outputs reach downstream pinning tests
+    in the same form they had before S4.
     """
 
     def zero() -> sp.Expr:
@@ -69,10 +76,14 @@ def SympyBackend(indep: sp.Symbol) -> Backend[sp.Expr]:  # noqa: N802 -- constru
     def integrate_x(c: sp.Expr) -> sp.Expr:
         return sp.integrate(c, (indep, sp.Integer(0), indep))
 
+    def normalize(c: sp.Expr) -> sp.Expr:
+        return sp.expand(c)
+
     return Backend(
         zero=zero,
         one=one,
         lift_xonly=lift_xonly,
         diff_x=diff_x,
         integrate_x=integrate_x,
+        normalize=normalize,
     )

@@ -62,13 +62,14 @@ def solve_step(problem: HamProblem, phi: QSeries, m: int) -> sp.Expr:
     """Compute u_m from phi = u_0 + u_1 q + ... + u_{m-1} q^{m-1}.
 
     Builds the m-th deformation RHS via `problem.rhs_m`, inverts L,
-    then adds back the χ_m u_{m-1} correction. The result is fully
-    expanded so downstream tests can compare with `sp.expand(...) == 0`
-    without needing further simplification.
+    then adds back the χ_m u_{m-1} correction. The result is canonical-
+    ised via `phi.backend.normalize` (=`sp.expand` for sympy, identity
+    for the future spectral backend) so downstream tests can compare
+    with structural `==` without re-canonicalising.
     """
     rhs = problem.rhs_m(phi, m)
     v = problem.L.invert(rhs)
-    return sp.expand(v + chi_m(m) * phi.coeff(m - 1))
+    return phi.backend.normalize(v + chi_m(m) * phi.coeff(m - 1))
 
 
 def solve(problem: HamProblem, order: int) -> HamSolution:
@@ -88,7 +89,7 @@ def solve(problem: HamProblem, order: int) -> HamSolution:
     if order < 0:
         raise ValueError(f"solve requires order >= 0; got order = {order}.")
     backend = SympyBackend(problem.L.var)
-    coeffs: list[sp.Expr] = [sp.expand(problem.u0)]
+    coeffs: list[sp.Expr] = [backend.normalize(backend.lift_xonly(problem.u0))]
     for m in range(1, order + 1):
         phi = QSeries(coeffs, order=m - 1, backend=backend)
         coeffs.append(solve_step(problem, phi, m))

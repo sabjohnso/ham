@@ -33,10 +33,14 @@ Currently exposed:
 """
 
 from collections.abc import Callable, Iterable
+from typing import Any
 
+import numpy as np
 import sympy as sp
+from numpy.typing import NDArray
 
 from ham.deformation import HamProblem
+from ham.grids import Grid
 from ham.operator import BoundaryCondition, LinearOperator
 from ham.series import SupportsCoefficientArith
 
@@ -180,3 +184,60 @@ def verify_initial_guess(
             actual = derivative.subs(var, bc.point)
         if sp.simplify(actual - bc.value) != 0:
             raise InitialGuessViolation(bc=bc, actual=actual)
+
+
+def verify_initial_guess_grid[C: SupportsCoefficientArith](
+    problem: HamProblem[C],
+    original_bcs: Iterable[BoundaryCondition],
+    grid: Grid,
+    *,
+    tol: float = 1e-10,
+) -> None:
+    """Spectral sibling of `verify_initial_guess`: check `u_0` at grid nodes.
+
+    Lifts `problem.u0` (a sympy expression in `problem.L.var`) to nodal
+    values on `grid` via `sp.lambdify`, then for each `bc` in
+    `original_bcs` computes `(D^{bc.derivative_order} @ u0_grid)` at
+    the grid node nearest `bc.point` and asserts it equals `bc.value`
+    within `tol`. Catches the substrate-specific failure mode the
+    sympy `verify_initial_guess` cannot see: a symbolic `u_0` that
+    satisfies a BC exactly under `.subs` but loses precision on the
+    discrete grid (e.g. an exponentially-stretched guess at a
+    truncated asymptotic point).
+
+    Asymptotic BCs (`bc.point.is_infinite`) are rejected — a finite
+    grid has no infinite node to anchor them to; problems with
+    asymptotic BCs need a rational-Chebyshev grid (or to truncate
+    them at a large finite cap before calling this helper).
+
+    Raises `InitialGuessViolation` on the first failing `bc`, with
+    the `bc` and the `actual` (numeric) value attached. An empty
+    `original_bcs` iterable is a no-op.
+    """
+    var = problem.L.var
+    nodes = grid.nodes
+    n_plus_1 = nodes.shape[0]
+    f = sp.lambdify(var, problem.u0, modules="numpy")
+    raw = f(nodes)
+    u0_grid: NDArray[Any] = (
+        np.full(n_plus_1, raw, dtype=np.float64)
+        if np.isscalar(raw)
+        else np.asarray(raw, dtype=np.float64)
+    )
+    for bc in original_bcs:
+        if not bc.point.is_finite:
+            raise ValueError(
+                f"verify_initial_guess_grid requires finite BC points; got "
+                f"bc.point = {bc.point!r}. Truncate to a finite cap or use a "
+                f"rational-Chebyshev grid for semi-infinite domains."
+            )
+        point_val = float(bc.point)
+        a, b = grid.domain
+        if not a <= point_val <= b:
+            raise ValueError(f"BC point {point_val} lies outside the grid's domain {grid.domain}.")
+        idx = int(np.argmin(np.abs(nodes - point_val)))
+        d_k = grid.differentiation_matrix_power(bc.derivative_order)
+        actual_value = float((d_k @ u0_grid)[idx])
+        expected_value = float(bc.value)
+        if abs(actual_value - expected_value) > tol:
+            raise InitialGuessViolation(bc=bc, actual=sp.Float(actual_value))

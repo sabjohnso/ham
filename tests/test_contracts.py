@@ -15,6 +15,7 @@ BCs declared on `problem.L` are typically the homogeneous versions.
 sibling checker that pins this contract at problem-construction time.
 """
 
+import numpy as np
 import pytest
 import sympy as sp
 from ham.contracts import (
@@ -289,3 +290,96 @@ def test_verify_initial_guess_message_names_bc_and_actual() -> None:
         verify_initial_guess(problem, (bc,))
     msg = str(exc_info.value)
     assert "u_0" in msg or "initial guess" in msg.lower()
+
+
+# --- verify_initial_guess_grid -------------------------------------------
+
+
+def _build_spectral_skeleton(u0: sp.Expr) -> HamProblem[np.ndarray]:
+    """A spectral HAM problem skeleton with the given symbolic u_0."""
+    from ham.grids import ChebGLGrid
+    from ham.spectral import spectral_linear_operator
+
+    grid = ChebGLGrid(N=8, domain=(0.0, 1.0))
+    L_op = spectral_linear_operator(  # noqa: N806
+        U(X).diff(X),
+        dependent=U,
+        indep=X,
+        grid=grid,
+        scalar="float",
+        bcs=(BoundaryCondition(point=sp.Integer(0), derivative_order=0),),
+    )
+    return HamProblem(
+        L=L_op,
+        N=NonlinearOperator(expr=U(X), dependent=U, indep=X),
+        H=sp.Integer(1),
+        hbar=sp.Float(-1.0),
+        u0=u0,
+    )
+
+
+def test_verify_initial_guess_grid_accepts_polynomial_u0() -> None:
+    """u_0 = x^2 satisfies u(0) = 0 on a ChebGL grid over [0, 1]."""
+    from ham.contracts import verify_initial_guess_grid
+    from ham.grids import ChebGLGrid
+
+    problem = _build_spectral_skeleton(X**2)
+    grid = ChebGLGrid(N=8, domain=(0.0, 1.0))
+    original_bcs = (
+        BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Integer(0)),
+    )
+    verify_initial_guess_grid(problem, original_bcs, grid)
+
+
+def test_verify_initial_guess_grid_catches_wrong_bc_value() -> None:
+    """u_0 = 1 does NOT satisfy u(0) = 0; the grid check raises."""
+    from ham.contracts import verify_initial_guess_grid
+    from ham.grids import ChebGLGrid
+
+    problem = _build_spectral_skeleton(sp.Integer(1))
+    grid = ChebGLGrid(N=8, domain=(0.0, 1.0))
+    original_bcs = (
+        BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Integer(0)),
+    )
+    with pytest.raises(InitialGuessViolation):
+        verify_initial_guess_grid(problem, original_bcs, grid)
+
+
+def test_verify_initial_guess_grid_accepts_first_derivative_bc() -> None:
+    """u_0 = x satisfies u(0)=0 AND u'(x)=1 anywhere — grid version verifies both."""
+    from ham.contracts import verify_initial_guess_grid
+    from ham.grids import ChebGLGrid
+
+    problem = _build_spectral_skeleton(X)
+    grid = ChebGLGrid(N=8, domain=(0.0, 1.0))
+    original_bcs = (
+        BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Integer(0)),
+        BoundaryCondition(point=sp.Integer(0), derivative_order=1, value=sp.Integer(1)),
+    )
+    verify_initial_guess_grid(problem, original_bcs, grid)
+
+
+def test_verify_initial_guess_grid_rejects_infinite_bc_point() -> None:
+    """Asymptotic BCs require a rational-Chebyshev grid; ChebGL rejects them."""
+    from ham.contracts import verify_initial_guess_grid
+    from ham.grids import ChebGLGrid
+
+    problem = _build_spectral_skeleton(X)
+    grid = ChebGLGrid(N=8, domain=(0.0, 1.0))
+    original_bcs = (BoundaryCondition(point=sp.oo, derivative_order=1, value=sp.Integer(1)),)
+    with pytest.raises(ValueError, match="finite"):
+        verify_initial_guess_grid(problem, original_bcs, grid)
+
+
+def test_verify_initial_guess_grid_rejects_out_of_domain_bc() -> None:
+    """A BC at a point outside the grid's domain is rejected."""
+    from ham.contracts import verify_initial_guess_grid
+    from ham.grids import ChebGLGrid
+
+    problem = _build_spectral_skeleton(X)
+    grid = ChebGLGrid(N=8, domain=(0.0, 1.0))
+    original_bcs = (
+        BoundaryCondition(point=sp.Integer(5), derivative_order=0, value=sp.Integer(5)),
+    )
+    with pytest.raises(ValueError, match="outside the grid"):
+        verify_initial_guess_grid(problem, original_bcs, grid)

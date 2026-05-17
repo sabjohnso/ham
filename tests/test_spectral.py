@@ -13,10 +13,13 @@ into Series consumers (that happens in S7).
 import numpy as np
 import pytest
 import sympy as sp
+from ham.contracts import verify_linearity
 from ham.grids import ChebGLGrid
-from ham.spectral import SpectralBackend
+from ham.operator import BoundaryCondition
+from ham.spectral import SpectralBackend, spectral_linear_operator
 
 X = sp.Symbol("x")
+U = sp.Function("u")
 
 
 # --- Shape / dtype --------------------------------------------------------
@@ -232,3 +235,163 @@ def test_spectral_backend_sympy_one_is_multiplicative_identity() -> None:
     result = backend.one() * c
     for j in range(5):
         assert sp.expand(result[j] - c[j]) == 0
+
+
+# --- spectral_linear_operator (S6) ---------------------------------------
+
+
+def test_spectral_linear_operator_action_recovers_polynomial_derivative() -> None:
+    """For L = u'', action(p) returns p'' on a resolved polynomial."""
+    expr = U(X).diff(X, 2)
+    grid = ChebGLGrid(N=16, domain=(-1.0, 1.0))
+    L = spectral_linear_operator(expr, dependent=U, indep=X, grid=grid, scalar="float")  # noqa: N806 -- Liao's notation
+    p = grid.nodes**4 - grid.nodes**2 + 1
+    expected = 12 * grid.nodes**2 - 2
+    np.testing.assert_allclose(L.apply(p), expected, atol=1e-10)
+
+
+def test_spectral_linear_operator_action_with_constant_coefficient() -> None:
+    """For L = 2*u, action(c) returns 2c element-wise."""
+    expr = 2 * U(X)
+    grid = ChebGLGrid(N=8)
+    L = spectral_linear_operator(expr, dependent=U, indep=X, grid=grid, scalar="float")  # noqa: N806 -- Liao's notation
+    c = np.linspace(1.0, 10.0, 9)
+    np.testing.assert_allclose(L.apply(c), 2 * c, atol=1e-12)
+
+
+def test_spectral_linear_operator_action_with_x_coefficient() -> None:
+    """For L = x*u, action(c) returns nodes * c (x-dependent diagonal scaling)."""
+    expr = X * U(X)
+    grid = ChebGLGrid(N=8, domain=(0.0, 2.0))
+    L = spectral_linear_operator(expr, dependent=U, indep=X, grid=grid, scalar="float")  # noqa: N806 -- Liao's notation
+    c = np.ones(9)
+    np.testing.assert_allclose(L.apply(c), grid.nodes, atol=1e-12)
+
+
+def test_spectral_linear_operator_rejects_nonlinear_expression() -> None:
+    """L = u**2 is not linear and is rejected at construction."""
+    expr = U(X) ** 2
+    grid = ChebGLGrid(N=8)
+    with pytest.raises(ValueError, match="linear"):
+        spectral_linear_operator(expr, dependent=U, indep=X, grid=grid, scalar="float")
+
+
+def test_spectral_linear_operator_rejects_constant_term() -> None:
+    """L = u + 1 has a u-free constant term and is rejected."""
+    expr = U(X) + sp.Integer(1)
+    grid = ChebGLGrid(N=8)
+    with pytest.raises(ValueError, match="linear"):
+        spectral_linear_operator(expr, dependent=U, indep=X, grid=grid, scalar="float")
+
+
+# --- spectral_inverter ---------------------------------------------------
+
+
+def test_spectral_inverter_solves_first_order_ivp_for_constant_rhs() -> None:
+    """For L = u' with u(0) = 0 on [0, 1], invert(1) gives u(x) = x at the nodes."""
+    expr = U(X).diff(X)
+    grid = ChebGLGrid(N=12, domain=(0.0, 1.0))
+    bcs = (BoundaryCondition(point=sp.Integer(0), derivative_order=0),)
+    L = spectral_linear_operator(expr, dependent=U, indep=X, grid=grid, scalar="float", bcs=bcs)  # noqa: N806 -- Liao's notation
+    rhs = np.ones(13)
+    u = L.invert(rhs)
+    np.testing.assert_allclose(u, grid.nodes, atol=1e-10)
+
+
+def test_spectral_inverter_solves_second_order_bvp_with_zero_dirichlet() -> None:
+    """For L = u'' with u(-1) = u(1) = 0, invert(-2) gives u(x) = 1 - x^2."""
+    expr = U(X).diff(X, 2)
+    grid = ChebGLGrid(N=16, domain=(-1.0, 1.0))
+    bcs = (
+        BoundaryCondition(point=sp.Integer(-1), derivative_order=0),
+        BoundaryCondition(point=sp.Integer(1), derivative_order=0),
+    )
+    L = spectral_linear_operator(expr, dependent=U, indep=X, grid=grid, scalar="float", bcs=bcs)  # noqa: N806 -- Liao's notation
+    rhs = -2 * np.ones(17)
+    u = L.invert(rhs)
+    expected = 1 - grid.nodes**2
+    np.testing.assert_allclose(u, expected, atol=1e-10)
+
+
+def test_spectral_inverter_honors_nonzero_bc_value() -> None:
+    """For L = u' with u(0) = 5 and rhs = 0, invert gives the constant 5."""
+    expr = U(X).diff(X)
+    grid = ChebGLGrid(N=8, domain=(0.0, 1.0))
+    bcs = (BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Integer(5)),)
+    L = spectral_linear_operator(expr, dependent=U, indep=X, grid=grid, scalar="float", bcs=bcs)  # noqa: N806 -- Liao's notation
+    rhs = np.zeros(9)
+    u = L.invert(rhs)
+    np.testing.assert_allclose(u, 5.0 * np.ones(9), atol=1e-10)
+
+
+def test_spectral_inverter_rejects_infinite_bc_point() -> None:
+    """Asymptotic BC at infinity cannot be honoured on a finite grid."""
+    expr = U(X).diff(X)
+    grid = ChebGLGrid(N=8, domain=(0.0, 1.0))
+    bcs = (BoundaryCondition(point=sp.oo, derivative_order=0),)
+    with pytest.raises(ValueError, match="finite"):
+        spectral_linear_operator(expr, dependent=U, indep=X, grid=grid, scalar="float", bcs=bcs)
+
+
+# --- verify_linearity with injected equal comparator (D-4 demo) -----------
+
+
+def test_spectral_linear_operator_passes_linearity_with_np_allclose_equal() -> None:
+    """verify_linearity passes for L = u'' + 2 u' + u on the float spectral backend.
+
+    The D-4 demonstration: the same verify_linearity machinery the
+    sympy backend uses serves the spectral float backend just by
+    swapping the comparator from `sp.expand(a-b) == 0` to `np.allclose`.
+    """
+    expr = U(X).diff(X, 2) + 2 * U(X).diff(X) + U(X)
+    grid = ChebGLGrid(N=12, domain=(-1.0, 1.0))
+    L = spectral_linear_operator(expr, dependent=U, indep=X, grid=grid, scalar="float")  # noqa: N806 -- Liao's notation
+
+    rng = np.random.default_rng(seed=42)
+    samples = []
+    for _ in range(3):
+        u_sample = rng.standard_normal(13)
+        v_sample = rng.standard_normal(13)
+        alpha = np.array(float(rng.standard_normal()))
+        beta = np.array(float(rng.standard_normal()))
+        samples.append((u_sample, v_sample, alpha, beta))
+
+    def np_allclose(a: np.ndarray, b: np.ndarray) -> bool:
+        return bool(np.allclose(a, b, atol=1e-10))
+
+    verify_linearity(L, samples, equal=np_allclose)
+
+
+def test_spectral_linear_operator_passes_linearity_with_sympy_elementwise_equal() -> None:
+    """verify_linearity passes for L = u'' + u on the sympy-scalar spectral backend.
+
+    Same machinery; comparator is element-wise tolerance-on-the-residual
+    for the object-array path. The grid nodes are floats (cos(πj/N) is
+    not exact for general j, N), which carries through into the
+    polynomial-in-ℏ residual as float coefficients near machine epsilon —
+    `sp.expand(a-b) == 0` is too strict unless the nodes are rational.
+    Substituting every free symbol to 1 and float-casting the residual
+    gives a single numeric magnitude to threshold.
+    """
+    expr = U(X).diff(X, 2) + U(X)
+    grid = ChebGLGrid(N=3, domain=(-1.0, 1.0))
+    L = spectral_linear_operator(expr, dependent=U, indep=X, grid=grid, scalar="sympy")  # noqa: N806 -- Liao's notation
+
+    hbar = sp.Symbol("hbar")
+    u_sample = np.array([hbar, sp.Integer(2), hbar + 1, sp.Integer(0)], dtype=object)
+    v_sample = np.array([sp.Integer(1), hbar**2, sp.Integer(3), hbar], dtype=object)
+    alpha = np.array(sp.Integer(2), dtype=object)
+    beta = np.array(sp.Rational(-1, 3), dtype=object)
+
+    def sympy_elementwise_close(a: np.ndarray, b: np.ndarray, tol: float = 1e-9) -> bool:
+        for x, y in zip(a, b, strict=True):
+            diff = x - y
+            if diff == 0:
+                continue
+            free = diff.free_symbols
+            value = float(diff.subs({sym: sp.Integer(1) for sym in free}) if free else diff)
+            if abs(value) > tol:
+                return False
+        return True
+
+    verify_linearity(L, [(u_sample, v_sample, alpha, beta)], equal=sympy_elementwise_close)

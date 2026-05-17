@@ -1,7 +1,9 @@
-"""Spectral backend for SHAM — `Backend[np.ndarray]` over a spectral grid.
+"""Spectral backend + spectral LinearOperator factory for SHAM.
 
-`SpectralBackend(grid, indep, scalar)` is generic over the per-element
-scalar ring (PLAN.org D-1):
+`SpectralBackend(grid, indep, scalar)` is the `Backend[np.ndarray]`
+substrate: zero / one / lift_xonly / diff_x / integrate_x / normalize
+over a spectral grid, generic in the per-element scalar ring (PLAN.org
+D-1):
 
   - `scalar = "float"` — classical SHAM. Arrays are `float64`; the
     linear solver in `integrate_x` is `np.linalg.solve`; ℏ is a
@@ -12,17 +14,19 @@ scalar ring (PLAN.org D-1):
     uses `sp.Matrix.LUsolve`; `hbar_curve_at` works directly because
     every grid entry is already a polynomial in ℏ.
 
-Both scalars share the entire Backend interface; the only points of
-variation are the array dtype and the linear-solve strategy in
-`integrate_x`. `indep` is the sympy symbol the user writes their
-problem in; it's used by `lift_xonly` to translate sympy expressions
-into grid values (via `sp.lambdify` for float, element-wise `.subs`
-for sympy).
-
-S5b ships the backend in isolation — tests-only, no consumer wires it
-into Series yet. That happens in S7.
+`spectral_linear_operator(expr_in_u, dependent, indep, grid, scalar,
+bcs)` builds a `LinearOperator[NDArray]` from a sympy expression that
+is linear in `dependent(indep)` and its x-derivatives. It assembles
+the dense `L_matrix` as `sum_k diag(coeff_k(nodes)) @ D^k` and pairs
+it with `spectral_inverter`, which solves `L · u = rhs` under the
+declared BCs by replacing one row per BC with the row that evaluates
+`u^(bc.derivative_order)` at the boundary node and pinning the
+matching RHS entry to `bc.value`. Symbolic-side counterpart is
+`sympy_dsolve_inverter` in `ham.operator`; both have the same factory
+shape (PLAN.org S3 / S6).
 """
 
+from collections.abc import Callable
 from typing import Any, Literal
 
 import numpy as np
@@ -31,6 +35,7 @@ from numpy.typing import NDArray
 
 from ham.backend import Backend
 from ham.grids import Grid
+from ham.operator import BoundaryCondition, LinearOperator
 
 Scalar = Literal["float", "sympy"]
 _NDArrAny = NDArray[Any]
@@ -50,15 +55,8 @@ def SpectralBackend(  # noqa: N802 -- constructor-style factory
         raise ValueError(f"SpectralBackend scalar must be 'float' or 'sympy'; got {scalar!r}.")
 
     n_plus_1 = grid.nodes.shape[0]
-
-    if scalar == "float":
-        dtype: type = np.float64
-        zero_scalar: object = 0.0
-        one_scalar: object = 1.0
-    else:
-        dtype = object
-        zero_scalar = sp.Integer(0)
-        one_scalar = sp.Integer(1)
+    dtype: type = np.float64 if scalar == "float" else object
+    zero_scalar: object = 0.0 if scalar == "float" else sp.Integer(0)
 
     def zero() -> _NDArrAny:
         return np.zeros(n_plus_1, dtype=dtype)
@@ -69,18 +67,7 @@ def SpectralBackend(  # noqa: N802 -- constructor-style factory
         return np.ones(n_plus_1, dtype=dtype)
 
     def lift_xonly(expr: sp.Expr) -> _NDArrAny:
-        if scalar == "float":
-            f = sp.lambdify(indep, expr, modules="numpy")
-            raw = f(grid.nodes)
-            if np.isscalar(raw):
-                return np.full(n_plus_1, raw, dtype=dtype)
-            return np.asarray(raw, dtype=dtype)
-        # Sympy scalar: substitute symbolically at each node so any
-        # non-indep symbols (e.g. ℏ) survive into the result.
-        return np.array(
-            [expr.subs(indep, sp.Float(node)) for node in grid.nodes],
-            dtype=object,
-        )
+        return _evaluate_at_nodes(expr, indep, grid.nodes, scalar)
 
     def diff_x(c: _NDArrAny, k: int) -> _NDArrAny:
         if k == 0:
@@ -123,10 +110,6 @@ def SpectralBackend(  # noqa: N802 -- constructor-style factory
             return c  # numpy floats have no canonical-form notion
         return np.array([sp.expand(entry) for entry in c], dtype=object)
 
-    # Silence unused-binding warning on one_scalar in the closure;
-    # one() returns ones either way and doesn't need the scalar.
-    del one_scalar
-
     return Backend(
         zero=zero,
         one=one,
@@ -135,6 +118,180 @@ def SpectralBackend(  # noqa: N802 -- constructor-style factory
         integrate_x=integrate_x,
         normalize=normalize,
     )
+
+
+# --- LinearOperator factory ----------------------------------------------
+
+
+def spectral_linear_operator(
+    expr_in_u: sp.Expr,
+    dependent: sp.Function,
+    indep: sp.Symbol,
+    grid: Grid,
+    scalar: Scalar = "float",
+    *,
+    bcs: tuple[BoundaryCondition, ...] = (),
+) -> LinearOperator[_NDArrAny]:
+    """Build a `LinearOperator[NDArray]` from a linear-in-`u` sympy expression.
+
+    `expr_in_u` must be linear in `dependent(indep)` and its
+    x-derivatives — i.e. a sum of terms of the form
+    `coeff(indep) * d^k u / dx^k`. The factory decomposes it into
+    `(coeff, k)` pairs, evaluates each `coeff` on `grid.nodes`, and
+    assembles `L_matrix = Σ_k diag(coeff_k(nodes)) · D^k`. Non-linear
+    expressions (e.g. `u**2`) and constant-term expressions (e.g.
+    `u + 1`) are rejected by a reconstruction check after extraction.
+
+    `bcs` is interpreted by `spectral_inverter`: each `bc` replaces
+    one row of `L_matrix` at solve time so the inverter honours
+    `u^(bc.derivative_order)(bc.point) = bc.value`. The forward
+    `action` (the bare matvec) is unaffected; BCs only affect the
+    inverter, matching the standard spectral practice and the sympy
+    side's `sympy_dsolve_inverter`.
+    """
+    pairs = _parse_linear_in_u(expr_in_u, dependent, indep)
+
+    n_plus_1 = grid.nodes.shape[0]
+    matrix_dtype: type = np.float64 if scalar == "float" else object
+    l_matrix: _NDArrAny = np.zeros((n_plus_1, n_plus_1), dtype=matrix_dtype)
+    for coeff_expr, order in pairs:
+        coeff_at_nodes = _evaluate_at_nodes(coeff_expr, indep, grid.nodes, scalar)
+        d_k = grid.differentiation_matrix_power(order)
+        if scalar == "sympy":
+            d_k = d_k.astype(object)
+        # diag(coeff_at_nodes) @ D^k via broadcasting on the row index.
+        l_matrix = l_matrix + coeff_at_nodes.reshape(-1, 1) * d_k
+
+    inverter = spectral_inverter(l_matrix, bcs, grid, scalar)
+
+    def action(c: _NDArrAny) -> _NDArrAny:
+        return l_matrix @ c
+
+    return LinearOperator(var=indep, action=action, bcs=bcs, inverter=inverter)
+
+
+def spectral_inverter(
+    l_matrix: _NDArrAny,
+    bcs: tuple[BoundaryCondition, ...],
+    grid: Grid,
+    scalar: Scalar,
+) -> Callable[[_NDArrAny], _NDArrAny]:
+    """Build the inverter that solves `L · u = rhs` under the declared BCs.
+
+    For each `bc`, the row of `l_matrix` at the nearest grid node to
+    `bc.point` is replaced with row `D^(bc.derivative_order)` (which
+    evaluates `u^(k)` at that node when dotted with `u`), and the
+    matching RHS entry is overwritten with `bc.value`. The modified
+    system is then solved with `np.linalg.solve` (float) or
+    `sp.Matrix.LUsolve` (sympy).
+
+    Asymptotic BCs (`bc.point.is_infinite`) are rejected — a finite
+    grid has no infinite node to anchor them to; semi-infinite
+    problems will use a rational-Chebyshev grid in a later stage.
+    """
+    replacements: list[tuple[int, NDArray[np.float64], sp.Expr]] = []
+    for bc in bcs:
+        if not bc.point.is_finite:
+            raise ValueError(
+                f"spectral_inverter requires a finite BC point on a finite grid; "
+                f"got bc.point = {bc.point!r}. Semi-infinite problems need a "
+                f"rational-Chebyshev grid (S5b ships only ChebGLGrid)."
+            )
+        point_val = float(bc.point)
+        a, b = grid.domain
+        if not a <= point_val <= b:
+            raise ValueError(f"BC point {point_val} lies outside the grid's domain {grid.domain}.")
+        idx = int(np.argmin(np.abs(grid.nodes - point_val)))
+        replacement_row = grid.differentiation_matrix_power(bc.derivative_order)[idx, :]
+        replacements.append((idx, replacement_row, bc.value))
+
+    def invert(rhs: _NDArrAny) -> _NDArrAny:
+        l_mod = l_matrix.copy()
+        rhs_mod = rhs.copy()
+        if scalar == "sympy":
+            if l_mod.dtype != object:
+                l_mod = l_mod.astype(object)
+            if rhs_mod.dtype != object:
+                rhs_mod = rhs_mod.astype(object)
+        for idx, row, value in replacements:
+            l_mod[idx, :] = row.astype(object) if scalar == "sympy" else row
+            rhs_mod[idx] = value if scalar == "sympy" else float(value)
+        if scalar == "float":
+            return np.linalg.solve(l_mod, rhs_mod)
+        return _sympy_linear_solve(l_mod, rhs_mod)
+
+    return invert
+
+
+# --- helpers --------------------------------------------------------------
+
+
+def _evaluate_at_nodes(
+    expr: sp.Expr,
+    indep: sp.Symbol,
+    nodes: NDArray[np.float64],
+    scalar: Scalar,
+) -> _NDArrAny:
+    """Evaluate `expr(indep)` at each `node`, dtype-appropriate to `scalar`.
+
+    For float: lambdify and call; broadcast scalar results to the
+    grid's node count. For sympy: substitute symbolically at each
+    node so any non-indep symbols (e.g. ℏ) survive into the result.
+    """
+    n_plus_1 = nodes.shape[0]
+    if scalar == "float":
+        f = sp.lambdify(indep, expr, modules="numpy")
+        raw = f(nodes)
+        if np.isscalar(raw):
+            return np.full(n_plus_1, raw, dtype=np.float64)
+        return np.asarray(raw, dtype=np.float64)
+    return np.array(
+        [expr.subs(indep, sp.Float(node)) for node in nodes],
+        dtype=object,
+    )
+
+
+def _parse_linear_in_u(
+    expr_in_u: sp.Expr,
+    dependent: sp.Function,
+    indep: sp.Symbol,
+) -> list[tuple[sp.Expr, int]]:
+    """Decompose a linear-in-`u` sympy expression into `(coeff(x), derivative_order)` pairs.
+
+    Walks the expanded form of `expr_in_u`, finds every distinct
+    derivative order of `dependent(indep)` that appears, and extracts
+    the (degree-1) coefficient of each via `sp.Expr.coeff`. A
+    reconstruction check (`Σ coeff_k · u^(k)` must equal the input
+    after `sp.expand`) catches non-linearity, constant terms, and
+    other shapes the matrix builder cannot handle.
+    """
+    expanded = sp.expand(expr_in_u)
+    u_of_x = dependent(indep)
+
+    orders: set[int] = set()
+    for sub in sp.preorder_traversal(expanded):
+        if sub == u_of_x:
+            orders.add(0)
+        elif isinstance(sub, sp.Derivative) and sub.expr == u_of_x:
+            orders.add(int(sub.variable_count[0][1]))
+
+    pairs: list[tuple[sp.Expr, int]] = []
+    reconstructed: sp.Expr = sp.Integer(0)
+    for order in sorted(orders):
+        target = u_of_x if order == 0 else sp.Derivative(u_of_x, indep, order)
+        coeff = expanded.coeff(target)
+        pairs.append((coeff, order))
+        reconstructed = reconstructed + coeff * target
+
+    if sp.expand(reconstructed - expanded) != 0:
+        raise ValueError(
+            f"spectral_linear_operator: expression is not linear in "
+            f"{dependent}({indep}), or carries a u-free constant term. "
+            f"Input: {expr_in_u!r}; reconstructed linear part: {reconstructed!r}; "
+            f"difference: {sp.expand(expanded - reconstructed)!r}."
+        )
+
+    return pairs
 
 
 def _sympy_linear_solve(matrix: _NDArrAny, rhs: _NDArrAny) -> _NDArrAny:

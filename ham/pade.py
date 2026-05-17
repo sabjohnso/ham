@@ -22,6 +22,7 @@ system Padé construction with `Q(0) = 1` normalisation.
 from functools import reduce
 from operator import add
 
+import numpy as np
 import sympy as sp
 
 from ham.solver import HamSolution
@@ -46,6 +47,12 @@ def homotopy_pade(
       - `numerator_degree + denominator_degree <= solution.order`
         (the Padé construction needs at least L + M + 1 series
         coefficients to be well-defined).
+      - sympy substrate only (PLAN.org S9): a spectral solution's
+        coefficients are ndarrays, and the Padé construction would
+        need a block-structured linear solve over those grid vectors.
+        That's a real follow-up but not the SHAM headline feature, so
+        the spectral release ships with `homotopy_pade` rejecting
+        spectral inputs.
 
     A singular denominator system raises sympy's
     `NonInvertibleMatrixError` rather than falling back silently — a
@@ -55,6 +62,14 @@ def homotopy_pade(
     With `hbar_value = None` the ℏ symbol from `solution.problem.hbar`
     is retained, mirroring the convention in `HamSolution[sp.Expr].partial_sum`.
     """
+    if isinstance(solution.phi.backend.zero(), np.ndarray):
+        raise NotImplementedError(
+            "homotopy_pade currently supports only the sympy substrate; got a "
+            "spectral solution (phi.backend.zero() is np.ndarray). The Padé "
+            "construction on the spectral side would need a block-structured "
+            "linear solve over grid-vector coefficients — tracked as a "
+            "follow-up in PLAN.org S9, not in the spectral MVP."
+        )
     if numerator_degree < 0 or denominator_degree < 0:
         raise ValueError(
             f"homotopy_pade requires non-negative degrees; got "

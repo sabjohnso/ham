@@ -193,3 +193,41 @@ def test_pade_symbolic_then_substituted_matches_direct_call() -> None:
     direct = homotopy_pade(sol, 1, 1, sp.Integer(-1))
     via_subs = symbolic.subs(HBAR, sp.Integer(-1))
     assert sp.simplify(via_subs - direct) == 0
+
+
+# --- Spectral substrate rejection (PLAN.org S9) ---------------------------
+
+
+def test_pade_rejects_spectral_solution() -> None:
+    """homotopy_pade on a spectral solution raises NotImplementedError.
+
+    Pinning the S9 decision: the spectral release ships with
+    `homotopy_pade` sympy-only. A spectral solution's coefficients are
+    grid vectors and the Padé construction would need a block-
+    structured linear solve over them — a real follow-up but not the
+    SHAM headline feature.
+    """
+    from ham.grids import ChebGLGrid
+    from ham.operator import BoundaryCondition
+    from ham.spectral import SpectralBackend, spectral_linear_operator
+
+    grid = ChebGLGrid(N=8, domain=(0.0, 1.0))
+    backend = SpectralBackend(grid, indep=X, scalar="float")
+    L = spectral_linear_operator(  # noqa: N806
+        U(X).diff(X),
+        dependent=U,
+        indep=X,
+        grid=grid,
+        scalar="float",
+        bcs=(BoundaryCondition(point=sp.Integer(0), derivative_order=0),),
+    )
+    problem = HamProblem(
+        L=L,
+        N=NonlinearOperator(expr=U(X).diff(X) - U(X), dependent=U, indep=X),
+        H=sp.Integer(1),
+        hbar=sp.Float(-1.0),
+        u0=sp.Integer(1),
+    )
+    sol = solve(problem, order=3, backend=backend)
+    with pytest.raises(NotImplementedError, match="spectral"):
+        homotopy_pade(sol, 1, 1)

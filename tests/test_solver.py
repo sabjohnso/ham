@@ -1,6 +1,6 @@
 """Tests for the HAM solver (Stage 5).
 
-Stage 5a slice: the HamSolution return type and the per-step solve_step
+Stage 5a slice: the HamSolution[sp.Expr] return type and the per-step solve_step
 function. Hand-derived u_1 / u_2 for two reference problems pin the
 behaviour of one HAM step. The solve driver and end-to-end Taylor-match
 tests live in 5b.
@@ -31,9 +31,9 @@ def _ivp_operator() -> LinearOperator[sp.Expr]:
     )
 
 
-def _exp_problem() -> HamProblem:
+def _exp_problem() -> HamProblem[sp.Expr]:
     """u' = u, u(0) = 1: N[u] = u' - u, u_0 = 1, exact solution exp(x)."""
-    return HamProblem(
+    return HamProblem[sp.Expr](
         L=_ivp_operator(),
         N=NonlinearOperator(expr=U(X).diff(X) - U(X), dependent=U, indep=X),
         H=sp.Integer(1),
@@ -42,9 +42,9 @@ def _exp_problem() -> HamProblem:
     )
 
 
-def _quadratic_problem() -> HamProblem:
+def _quadratic_problem() -> HamProblem[sp.Expr]:
     """u' = u^2, u(0) = 1: N[u] = u' - u^2, u_0 = 1, exact solution 1/(1-x)."""
-    return HamProblem(
+    return HamProblem[sp.Expr](
         L=_ivp_operator(),
         N=NonlinearOperator(expr=U(X).diff(X) - U(X) ** 2, dependent=U, indep=X),
         H=sp.Integer(1),
@@ -53,23 +53,23 @@ def _quadratic_problem() -> HamProblem:
     )
 
 
-# --- HamSolution data type ------------------------------------------------
+# --- HamSolution[sp.Expr] data type ------------------------------------------------
 
 
 def test_ham_solution_exposes_problem_and_phi() -> None:
-    """HamSolution stores the originating problem and the homotopy series."""
+    """HamSolution[sp.Expr] stores the originating problem and the homotopy series."""
     problem = _exp_problem()
     phi = QSeries([sp.Integer(1)], order=0)
-    sol = HamSolution(problem=problem, phi=phi)
+    sol = HamSolution[sp.Expr](problem=problem, phi=phi)
     assert sol.problem is problem
     assert sol.phi is phi
 
 
 def test_ham_solution_is_frozen() -> None:
-    """HamSolution is a frozen dataclass."""
+    """HamSolution[sp.Expr] is a frozen dataclass."""
     problem = _exp_problem()
     phi = QSeries([sp.Integer(1)], order=0)
-    sol = HamSolution(problem=problem, phi=phi)
+    sol = HamSolution[sp.Expr](problem=problem, phi=phi)
     with pytest.raises(dataclasses.FrozenInstanceError):
         sol.phi = QSeries.zero(order=0)  # type: ignore[misc]
 
@@ -78,7 +78,7 @@ def test_ham_solution_order_matches_phi_order() -> None:
     """sol.order is sol.phi.order (the working order M)."""
     problem = _exp_problem()
     phi = QSeries([sp.Integer(1), X, X**2], order=2)
-    sol = HamSolution(problem=problem, phi=phi)
+    sol = HamSolution[sp.Expr](problem=problem, phi=phi)
     assert sol.order == 2
 
 
@@ -86,7 +86,7 @@ def test_partial_sum_is_sum_of_phi_coefficients() -> None:
     """partial_sum() == Σ_k phi.coeff(k), ℏ kept symbolic in the result."""
     problem = _exp_problem()
     phi = QSeries([sp.Integer(1), -HBAR * X, HBAR**2 * (X**2 / 2 - X) - HBAR * X], order=2)
-    sol = HamSolution(problem=problem, phi=phi)
+    sol = HamSolution[sp.Expr](problem=problem, phi=phi)
     expected = sp.Integer(1) + (-HBAR * X) + (HBAR**2 * (X**2 / 2 - X) - HBAR * X)
     assert sp.expand(sol.partial_sum() - expected) == 0
 
@@ -95,7 +95,7 @@ def test_evaluate_at_hbar_substitutes_value() -> None:
     """evaluate_at_hbar(v) substitutes ℏ → v into partial_sum()."""
     problem = _exp_problem()
     phi = QSeries([sp.Integer(1), -HBAR * X], order=1)
-    sol = HamSolution(problem=problem, phi=phi)
+    sol = HamSolution[sp.Expr](problem=problem, phi=phi)
     assert sp.expand(sol.evaluate_at_hbar(sp.Integer(-1)) - (1 + X)) == 0
 
 

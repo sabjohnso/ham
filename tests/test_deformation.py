@@ -1,6 +1,6 @@
 """Tests for the HAM deformation-equation builder (Stage 4).
 
-Stage 4a slice: the HamProblem dataclass bundling (L, N, H, hbar, u_0)
+Stage 4a slice: the HamProblem[sp.Expr] dataclass bundling (L, N, H, hbar, u_0)
 and the chi_m heaviside function. r_m / rhs_m land in 4b.
 """
 
@@ -43,14 +43,14 @@ def test_chi_above_two_is_one() -> None:
         assert chi_m(m) == 1
 
 
-# --- HamProblem data type -------------------------------------------------
+# --- HamProblem[sp.Expr] data type -------------------------------------------------
 
 
 def test_ham_problem_stores_all_fields() -> None:
-    """HamProblem exposes L, N, H, hbar, u0 as attributes."""
+    """HamProblem[sp.Expr] exposes L, N, H, hbar, u0 as attributes."""
     l_op = LinearOperator(var=X, action=lambda e: sp.diff(e, X))
     n_op = NonlinearOperator(expr=U(X) ** 2, dependent=U, indep=X)
-    problem = HamProblem(L=l_op, N=n_op, H=X**2 + sp.Integer(1), hbar=HBAR, u0=X)
+    problem = HamProblem[sp.Expr](L=l_op, N=n_op, H=X**2 + sp.Integer(1), hbar=HBAR, u0=X)
     assert problem.L is l_op
     assert problem.N is n_op
     assert sp.expand(problem.H - (X**2 + 1)) == 0
@@ -59,10 +59,10 @@ def test_ham_problem_stores_all_fields() -> None:
 
 
 def test_ham_problem_is_frozen() -> None:
-    """HamProblem is a frozen dataclass — fields cannot be reassigned."""
+    """HamProblem[sp.Expr] is a frozen dataclass — fields cannot be reassigned."""
     l_op = LinearOperator(var=X, action=lambda e: sp.diff(e, X))
     n_op = NonlinearOperator(expr=U(X), dependent=U, indep=X)
-    problem = HamProblem(L=l_op, N=n_op, H=sp.Integer(1), hbar=HBAR, u0=sp.Integer(0))
+    problem = HamProblem[sp.Expr](L=l_op, N=n_op, H=sp.Integer(1), hbar=HBAR, u0=sp.Integer(0))
     with pytest.raises(dataclasses.FrozenInstanceError):
         problem.hbar = sp.Integer(2)  # type: ignore[misc]
 
@@ -70,9 +70,9 @@ def test_ham_problem_is_frozen() -> None:
 # --- r_m and rhs_m: the m-th deformation equation RHS ---------------------
 
 
-def _make_problem(n_expr: sp.Expr, u0: sp.Expr = X, h: sp.Expr = sp.S.One) -> HamProblem:
+def _make_problem(n_expr: sp.Expr, u0: sp.Expr = X, h: sp.Expr = sp.S.One) -> HamProblem[sp.Expr]:
     """A reusable HAM problem with L = d/dx (no BCs needed for Stage 4)."""
-    return HamProblem(
+    return HamProblem[sp.Expr](
         L=LinearOperator(var=X, action=lambda e: sp.diff(e, X)),
         N=NonlinearOperator(expr=n_expr, dependent=U, indep=X),
         H=h,

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 import sympy as sp
 
-from ham.series import QSeries
+from ham.series import Series, SupportsCoefficientArith
 
 
 @dataclass(frozen=True)
@@ -53,10 +53,10 @@ class NonlinearOperator:
         substituted = self.expr.replace(self.dependent, sp.Lambda(self.indep, u_concrete))
         return substituted.doit()
 
-    def apply_series(self, phi: QSeries) -> QSeries:
-        """Substitute phi for u in `expr` and evaluate with QSeries arithmetic.
+    def apply_series[C: SupportsCoefficientArith](self, phi: Series[C]) -> Series[C]:
+        """Substitute phi for u in `expr` and evaluate with Series arithmetic.
 
-        Recursive tree-walker that compiles `expr` into QSeries operations
+        Recursive tree-walker that compiles `expr` into Series operations
         against `phi`. After each multiplication the intermediate result is
         truncated back to `phi.order` (eager-truncation policy): HAM only
         ever reads coefficients up to q^{M-1} of N[phi] at working order M,
@@ -66,25 +66,30 @@ class NonlinearOperator:
         compiled directly. Any node the walker does not recognise — most
         notably derivatives (3c) and transcendentals like sin/exp (3d) —
         raises NotImplementedError naming the offending subexpression.
+
+        Generic in `C`: for sympy phi (`C = sp.Expr`) the substrate is
+        unchanged from before S7; for spectral phi (`C = np.ndarray`)
+        the leaves use `phi.backend.lift_xonly` / `.diff_x` / `.integrate_x`
+        which evaluate on the grid.
         """
         return self._compile(self.expr, phi)
 
-    def _compile(self, node: sp.Expr, phi: QSeries) -> QSeries:
-        """Compile a sympy node into a QSeries against phi (recursive).
+    def _compile[C: SupportsCoefficientArith](self, node: sp.Expr, phi: Series[C]) -> Series[C]:
+        """Compile a sympy node into a Series[C] against phi (recursive).
 
         All leaf constructions thread `phi.backend` through:
         identity-like coefficients (zero, one) come from `backend.zero()`
         / `backend.one()`; u-free constants are lifted into `C` via
         `backend.lift_xonly` before being stored. The sympy backend
-        makes those bridges no-ops; the spectral backend (S5b+) reuses
-        the same control flow without further changes here.
+        makes those bridges no-ops; the spectral backend reuses the same
+        control flow without further changes here.
         """
         backend = phi.backend
         if not node.has(self.dependent):
             # `.doit()` evaluates any symbolic Integral / Derivative subnodes
-            # in the u-free path so they reach the QSeries as concrete values
+            # in the u-free path so they reach the Series as concrete values
             # rather than as unevaluated sympy objects in coefficient slot 0.
-            return QSeries.constant(
+            return Series.constant(
                 backend.lift_xonly(node.doit()), order=phi.order, backend=backend
             )
         if node == self.dependent(self.indep):
@@ -94,22 +99,22 @@ class NonlinearOperator:
         if isinstance(node, sp.Integral):
             return self._compile_integral(node, phi)
         if isinstance(node, sp.Add):
-            result = QSeries.zero(order=phi.order, backend=backend)
+            result: Series[C] = Series.zero(order=phi.order, backend=backend)
             for arg in node.args:
                 result = result + self._compile(arg, phi)
             return result
         if isinstance(node, sp.Mul):
-            result = QSeries.constant(backend.one(), order=phi.order, backend=backend)
+            mul_result: Series[C] = Series.constant(backend.one(), order=phi.order, backend=backend)
             for arg in node.args:
                 factor = self._compile(arg, phi)
-                result = (result * factor).trunc(phi.order)
-            return result
+                mul_result = (mul_result * factor).trunc(phi.order)
+            return mul_result
         if isinstance(node, sp.Pow) and isinstance(node.exp, sp.Integer) and node.exp >= 0:
             base = self._compile(node.base, phi)
-            result = QSeries.constant(backend.one(), order=phi.order, backend=backend)
+            pow_result: Series[C] = Series.constant(backend.one(), order=phi.order, backend=backend)
             for _ in range(int(node.exp)):
-                result = (result * base).trunc(phi.order)
-            return result
+                pow_result = (pow_result * base).trunc(phi.order)
+            return pow_result
         raise NotImplementedError(
             f"NonlinearOperator.apply_series cannot compile subexpression "
             f"{node!r} (sympy type {type(node).__name__}). The compiler "
@@ -122,7 +127,9 @@ class NonlinearOperator:
             f"in u before constructing the NonlinearOperator."
         )
 
-    def _compile_derivative(self, node: sp.Derivative, phi: QSeries) -> QSeries:
+    def _compile_derivative[C: SupportsCoefficientArith](
+        self, node: sp.Derivative, phi: Series[C]
+    ) -> Series[C]:
         """Compile a Derivative(u(indep), indep, k) node into coefficient-wise diff.
 
         Only handles derivatives applied directly to `dependent(indep)` and
@@ -144,9 +151,11 @@ class NonlinearOperator:
         k = int(node.variable_count[0][1])
         return phi.map_coeffs(lambda c: phi.backend.diff_x(c, k))
 
-    def _compile_integral(self, node: sp.Integral, phi: QSeries) -> QSeries:
+    def _compile_integral[C: SupportsCoefficientArith](
+        self, node: sp.Integral, phi: Series[C]
+    ) -> Series[C]:
         """Compile an `Integral(integrand, (dummy, 0, indep))` node into
-        coefficient-wise integration on the integrand's compiled QSeries.
+        coefficient-wise integration on the integrand's compiled Series.
 
         Supports the canonical Volterra form: a single-variable definite
         integral from 0 to `indep` whose integrand depends on `indep`
@@ -214,5 +223,5 @@ class NonlinearOperator:
                 f"before constructing the NonlinearOperator."
             )
         integrand_at_indep = node.function.subs(dummy, self.indep)
-        integrand_qseries = self._compile(integrand_at_indep, phi)
-        return integrand_qseries.map_coeffs(phi.backend.integrate_x)
+        integrand_series = self._compile(integrand_at_indep, phi)
+        return integrand_series.map_coeffs(phi.backend.integrate_x)

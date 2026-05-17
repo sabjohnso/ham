@@ -139,7 +139,7 @@ class InitialGuessViolation(ValueError):  # noqa: N818  -- domain term, not "Err
 
 
 def verify_initial_guess(
-    problem: HamProblem,
+    problem: HamProblem[sp.Expr],
     original_bcs: Iterable[BoundaryCondition],
 ) -> None:
     """Assert that `problem.u0` satisfies each original BC pointwise.
@@ -167,7 +167,7 @@ def verify_initial_guess(
     Note: the BCs declared on `problem.L` are the /deformation/ BCs,
     which are typically the homogeneous versions of `original_bcs`.
     This helper exists because the original (possibly non-homogeneous)
-    BCs are not encoded on `HamProblem` itself — they live in the
+    BCs are not encoded on `HamProblem[sp.Expr]` itself — they live in the
     user's mental model and must be supplied separately.
     """
     var = problem.L.var

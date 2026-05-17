@@ -2,7 +2,7 @@
 
 Liao's Theorem 2.1 only guarantees correctness *given* convergence, so
 the diagnostics here are what justify reporting `u^{(M)}(x)` as a
-solution. Three independent observables flow from a HamSolution:
+solution. Three independent observables flow from a HamSolution[sp.Expr]:
 
   - `residual`:        N applied to the partial sum.
   - `residual_*`:      L2 and discrete norms of the residual (6b).
@@ -29,7 +29,7 @@ from ham.solver import HamSolution
 
 
 def _resolve_substitutions(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     hbar_value: sp.Expr | None,
     substitutions: Mapping[sp.Symbol, sp.Expr] | None,
 ) -> Mapping[sp.Symbol, sp.Expr] | None:
@@ -58,7 +58,7 @@ def _apply_substitutions(
 
 
 def residual(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     hbar_value: sp.Expr | None = None,
     *,
     substitutions: Mapping[sp.Symbol, sp.Expr] | None = None,
@@ -88,7 +88,7 @@ def residual(
 
 
 def residual_l2_squared(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     hbar_value: sp.Expr | None,
     interval: tuple[sp.Expr, sp.Expr],
     *,
@@ -110,7 +110,7 @@ def residual_l2_squared(
 
 
 def residual_discrete_sum_of_squares(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     hbar_value: sp.Expr | None,
     samples: Sequence[sp.Expr],
     *,
@@ -134,7 +134,7 @@ def residual_discrete_sum_of_squares(
 
 
 def hbar_curve_at(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     x_star: sp.Expr,
     *,
     substitutions: Mapping[sp.Symbol, sp.Expr] | None = None,
@@ -158,13 +158,13 @@ def hbar_curve_at(
 
 
 def optimal_hbar(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     hbar_grid: Sequence[sp.Expr],
-    norm_fn: Callable[[HamSolution, sp.Expr], sp.Expr],
+    norm_fn: Callable[[HamSolution[sp.Expr], sp.Expr], sp.Expr],
 ) -> sp.Expr:
     """Grid search: return the value in `hbar_grid` minimising `norm_fn(solution, h)`.
 
-    `norm_fn` is a caller-supplied function (HamSolution, hbar) → Expr,
+    `norm_fn` is a caller-supplied function (HamSolution[sp.Expr], hbar) → Expr,
     typically built by binding the interval/samples of a residual norm.
     Grid values should be concrete sympy numbers (Integer, Rational,
     Float) so the norm at each grid point evaluates to a real scalar.
@@ -181,9 +181,9 @@ def optimal_hbar(
 
 
 def optimal_parameters(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     parameter_grid: Sequence[Mapping[sp.Symbol, sp.Expr]],
-    norm_fn: Callable[[HamSolution, Mapping[sp.Symbol, sp.Expr]], sp.Expr],
+    norm_fn: Callable[[HamSolution[sp.Expr], Mapping[sp.Symbol, sp.Expr]], sp.Expr],
 ) -> Mapping[sp.Symbol, sp.Expr]:
     """Multi-parameter grid search: return the substitution dict minimising the norm.
 

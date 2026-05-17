@@ -76,9 +76,9 @@ version `u(0) = 0`.
 """
 
 
-def build_problem() -> HamProblem:
+def build_problem() -> HamProblem[sp.Expr]:
     """Assemble the logistic HAM problem (see module docstring)."""
-    return HamProblem(
+    return HamProblem[sp.Expr](
         L=LinearOperator(
             var=T,
             action=lambda e: sp.diff(e, T),
@@ -105,13 +105,13 @@ def taylor_reference(order: int) -> sp.Expr:
     return sp.expand(sp.series(exact_solution(), T, 0, order + 1).removeO())
 
 
-def solve_to(order: int) -> HamSolution:
+def solve_to(order: int) -> HamSolution[sp.Expr]:
     """Run the HAM solver on the logistic problem to working order `order`."""
     return solve(build_problem(), order=order)
 
 
 def is_convergent(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     hbar_value: sp.Expr,
     interval: tuple[sp.Expr, sp.Expr] = _DEFAULT_INTERVAL,
     threshold: sp.Expr = _DEFAULT_THRESHOLD,
@@ -140,7 +140,7 @@ def _grid_at_neg_one_neighbourhood() -> list[sp.Expr]:
     ]
 
 
-def analyze(solution: HamSolution) -> dict[str, sp.Expr | bool]:
+def analyze(solution: HamSolution[sp.Expr]) -> dict[str, sp.Expr | bool]:
     """Bundle of diagnostics for a logistic solution.
 
     Returns a dict with the same shape as the quadratic-drag example:
@@ -149,7 +149,7 @@ def analyze(solution: HamSolution) -> dict[str, sp.Expr | bool]:
     """
     interval = _DEFAULT_INTERVAL
 
-    def norm(s: HamSolution, h: sp.Expr) -> sp.Expr:
+    def norm(s: HamSolution[sp.Expr], h: sp.Expr) -> sp.Expr:
         return residual_l2_squared(s, h, interval)
 
     grid = _grid_at_neg_one_neighbourhood()

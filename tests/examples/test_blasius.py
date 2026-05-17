@@ -35,7 +35,7 @@ def test_initial_guess_satisfies_original_bcs_via_verify_helper() -> None:
 
 
 @pytest.fixture(scope="module")
-def sol_order_5() -> HamSolution:
+def sol_order_5() -> HamSolution[sp.Expr]:
     """One Blasius solve at M = 5, reused across the tests below."""
     return solve_to(5)
 
@@ -49,19 +49,19 @@ def test_initial_guess_satisfies_truncated_bcs() -> None:
     assert sp.simplify(sp.diff(u0, ETA).subs(ETA, ETA_MAX) - 1) == 0
 
 
-def test_partial_sum_satisfies_f_zero_is_zero(sol_order_5: HamSolution) -> None:
+def test_partial_sum_satisfies_f_zero_is_zero(sol_order_5: HamSolution[sp.Expr]) -> None:
     """For every ℏ, the partial sum vanishes at η = 0 (BC f(0) = 0)."""
     partial = sol_order_5.partial_sum()
     assert sp.simplify(partial.subs(ETA, 0)) == 0
 
 
-def test_partial_sum_satisfies_f_prime_zero_is_zero(sol_order_5: HamSolution) -> None:
+def test_partial_sum_satisfies_f_prime_zero_is_zero(sol_order_5: HamSolution[sp.Expr]) -> None:
     """For every ℏ, the partial sum has f'(0) = 0 (BC f'(0) = 0)."""
     partial = sol_order_5.partial_sum()
     assert sp.simplify(sp.diff(partial, ETA).subs(ETA, 0)) == 0
 
 
-def test_partial_sum_satisfies_truncated_asymptotic_bc(sol_order_5: HamSolution) -> None:
+def test_partial_sum_satisfies_truncated_asymptotic_bc(sol_order_5: HamSolution[sp.Expr]) -> None:
     """f'(η_max) = 1 exactly, for every ℏ — built in by construction.
 
     u_0 satisfies f'(η_max) = 1, and every higher u_k satisfies the
@@ -74,7 +74,7 @@ def test_partial_sum_satisfies_truncated_asymptotic_bc(sol_order_5: HamSolution)
 
 
 def test_f_double_prime_at_zero_diverges_at_hbar_neg_one(
-    sol_order_5: HamSolution,
+    sol_order_5: HamSolution[sp.Expr],
 ) -> None:
     """At ℏ = -1, M = 5, f''(0) is far from Howarth's reference.
 
@@ -88,7 +88,7 @@ def test_f_double_prime_at_zero_diverges_at_hbar_neg_one(
 
 
 def test_f_double_prime_at_zero_close_to_howarth_at_best_hbar(
-    sol_order_5: HamSolution,
+    sol_order_5: HamSolution[sp.Expr],
 ) -> None:
     """At a well-chosen ℏ (here -2/5), f''(0) is within 0.1 of Howarth's 0.4696.
 
@@ -100,17 +100,17 @@ def test_f_double_prime_at_zero_close_to_howarth_at_best_hbar(
     assert sp.Abs(value - HOWARTH_F_DOUBLE_PRIME_AT_ZERO) < sp.Rational(1, 10)
 
 
-def test_validity_gate_fails_at_hbar_neg_one(sol_order_5: HamSolution) -> None:
+def test_validity_gate_fails_at_hbar_neg_one(sol_order_5: HamSolution[sp.Expr]) -> None:
     """is_convergent rejects ℏ = -1 where the series diverges."""
     assert is_convergent(sol_order_5, sp.Integer(-1)) is False
 
 
-def test_validity_gate_passes_at_best_hbar(sol_order_5: HamSolution) -> None:
+def test_validity_gate_passes_at_best_hbar(sol_order_5: HamSolution[sp.Expr]) -> None:
     """is_convergent accepts ℏ = -2/5 where f''(0) is close to Howarth."""
     assert is_convergent(sol_order_5, sp.Rational(-2, 5)) is True
 
 
-def test_hbar_remains_symbolic_in_u_k_for_k_geq_1(sol_order_5: HamSolution) -> None:
+def test_hbar_remains_symbolic_in_u_k_for_k_geq_1(sol_order_5: HamSolution[sp.Expr]) -> None:
     """u_k for k >= 1 carries the ℏ symbol; substitute-late convention holds."""
     for k in range(1, sol_order_5.order + 1):
         assert HBAR in sol_order_5.phi.coeff(k).free_symbols

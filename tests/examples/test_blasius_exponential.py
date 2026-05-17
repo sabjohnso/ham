@@ -38,7 +38,7 @@ def test_initial_guess_satisfies_original_bcs_via_verify_helper() -> None:
 
 
 @pytest.fixture(scope="module")
-def sol_order_3() -> HamSolution:
+def sol_order_3() -> HamSolution[sp.Expr]:
     """One symbolic-alpha Blasius exponential-basis solve at M = 3, reused across tests.
 
     Stage 13a's closed-form basis-aware inverter brought the solve time
@@ -81,20 +81,20 @@ def test_inverter_zeros_growing_exp_branch_on_resonant_rhs() -> None:
     assert sp.simplify(lhs - rhs) == 0
 
 
-def test_partial_sum_satisfies_f_zero_is_zero(sol_order_3: HamSolution) -> None:
+def test_partial_sum_satisfies_f_zero_is_zero(sol_order_3: HamSolution[sp.Expr]) -> None:
     """For every (ℏ, alpha), the partial sum vanishes at η = 0."""
     partial = sol_order_3.partial_sum()
     assert sp.simplify(partial.subs(ETA, 0)) == 0
 
 
-def test_partial_sum_satisfies_f_prime_zero_is_zero(sol_order_3: HamSolution) -> None:
+def test_partial_sum_satisfies_f_prime_zero_is_zero(sol_order_3: HamSolution[sp.Expr]) -> None:
     """For every (ℏ, alpha), the partial sum has f'(0) = 0."""
     partial = sol_order_3.partial_sum()
     assert sp.simplify(sp.diff(partial, ETA).subs(ETA, 0)) == 0
 
 
 def test_partial_sum_satisfies_asymptotic_bc_at_alpha_one(
-    sol_order_3: HamSolution,
+    sol_order_3: HamSolution[sp.Expr],
 ) -> None:
     """At alpha = 1, every ℏ: lim(η → ∞) f'(η) = 1 (the original Blasius BC).
 
@@ -107,7 +107,7 @@ def test_partial_sum_satisfies_asymptotic_bc_at_alpha_one(
 
 
 def test_f_double_prime_at_zero_close_to_howarth_at_alpha_one(
-    sol_order_3: HamSolution,
+    sol_order_3: HamSolution[sp.Expr],
 ) -> None:
     """At alpha = 1 (Stage 11 default) and ℏ = -7/10, M = 3: error < 0.01.
 
@@ -120,7 +120,7 @@ def test_f_double_prime_at_zero_close_to_howarth_at_alpha_one(
 
 
 def test_two_parameter_optimum_beats_alpha_one_optimum(
-    sol_order_3: HamSolution,
+    sol_order_3: HamSolution[sp.Expr],
 ) -> None:
     """The 2D (ℏ, alpha) optimum yields |f''(0) - Howarth| < 5x10⁻⁴ at M = 3.
 
@@ -135,19 +135,19 @@ def test_two_parameter_optimum_beats_alpha_one_optimum(
     assert err < sp.Rational(5, 10000)
 
 
-def test_validity_gate_passes_at_best_substitutions(sol_order_3: HamSolution) -> None:
+def test_validity_gate_passes_at_best_substitutions(sol_order_3: HamSolution[sp.Expr]) -> None:
     """is_convergent accepts the 2D-optimal (ℏ, alpha) substitution."""
     analysis = analyze(sol_order_3)
     assert is_convergent(sol_order_3, substitutions=analysis["best_substitutions"]) is True
 
 
-def test_validity_gate_fails_at_hbar_zero(sol_order_3: HamSolution) -> None:
+def test_validity_gate_fails_at_hbar_zero(sol_order_3: HamSolution[sp.Expr]) -> None:
     """At ℏ = 0 the partial sum is u_0(alpha=1); f''(0) = u_0''(0) = alpha = 1, far from Howarth."""
     assert is_convergent(sol_order_3, sp.Integer(0)) is False
 
 
 def test_two_parameter_beats_polynomial_basis_at_higher_order(
-    sol_order_3: HamSolution,
+    sol_order_3: HamSolution[sp.Expr],
 ) -> None:
     """The 2D-optimal exp basis at M = 3 beats polynomial basis at M = 5 by 100x.
 
@@ -178,7 +178,7 @@ def test_two_parameter_beats_polynomial_basis_at_higher_order(
     assert err_exp_2d < err_poly / 100
 
 
-def test_f_double_prime_rejects_both_shortcuts(sol_order_3: HamSolution) -> None:
+def test_f_double_prime_rejects_both_shortcuts(sol_order_3: HamSolution[sp.Expr]) -> None:
     """Supplying both `hbar_value` and `substitutions` is ambiguous and must raise."""
     with pytest.raises(ValueError, match="not both"):
         f_double_prime_at_zero(
@@ -189,7 +189,7 @@ def test_f_double_prime_rejects_both_shortcuts(sol_order_3: HamSolution) -> None
 
 
 def test_hbar_and_alpha_remain_symbolic_in_u_k_for_k_geq_1(
-    sol_order_3: HamSolution,
+    sol_order_3: HamSolution[sp.Expr],
 ) -> None:
     """u_k for k ≥ 1 carries both ℏ and alpha; substitute-late convention holds for two params."""
     for k in range(1, sol_order_3.order + 1):

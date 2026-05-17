@@ -42,9 +42,9 @@ def _ivp_operator() -> LinearOperator[sp.Expr]:
     )
 
 
-def _exp_problem() -> HamProblem:
+def _exp_problem() -> HamProblem[sp.Expr]:
     """u' = u, u(0) = 1; N[u] = u' - u."""
-    return HamProblem(
+    return HamProblem[sp.Expr](
         L=_ivp_operator(),
         N=NonlinearOperator(expr=U(X).diff(X) - U(X), dependent=U, indep=X),
         H=sp.Integer(1),
@@ -53,9 +53,9 @@ def _exp_problem() -> HamProblem:
     )
 
 
-def _quadratic_problem() -> HamProblem:
+def _quadratic_problem() -> HamProblem[sp.Expr]:
     """u' = u², u(0) = 1; N[u] = u' - u²."""
-    return HamProblem(
+    return HamProblem[sp.Expr](
         L=_ivp_operator(),
         N=NonlinearOperator(expr=U(X).diff(X) - U(X) ** 2, dependent=U, indep=X),
         H=sp.Integer(1),

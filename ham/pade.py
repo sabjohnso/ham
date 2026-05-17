@@ -28,7 +28,7 @@ from ham.solver import HamSolution
 
 
 def homotopy_pade(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     numerator_degree: int,
     denominator_degree: int,
     hbar_value: sp.Expr | None = None,
@@ -53,7 +53,7 @@ def homotopy_pade(
     different [L/M].
 
     With `hbar_value = None` the ℏ symbol from `solution.problem.hbar`
-    is retained, mirroring the convention in `HamSolution.partial_sum`.
+    is retained, mirroring the convention in `HamSolution[sp.Expr].partial_sum`.
     """
     if numerator_degree < 0 or denominator_degree < 0:
         raise ValueError(

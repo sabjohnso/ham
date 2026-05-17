@@ -101,11 +101,11 @@ homogeneous versions (all values zero).
 """
 
 
-def build_problem() -> HamProblem:
+def build_problem() -> HamProblem[sp.Expr]:
     """Assemble the Blasius HAM problem in truncated-domain form."""
     u0 = ETA**2 / (sp.Integer(2) * ETA_MAX)
     n_expr = F(ETA).diff(ETA, 3) + sp.Rational(1, 2) * F(ETA) * F(ETA).diff(ETA, 2)
-    return HamProblem(
+    return HamProblem[sp.Expr](
         L=LinearOperator(
             var=ETA,
             action=lambda e: sp.diff(e, ETA, 3),
@@ -126,12 +126,12 @@ def build_problem() -> HamProblem:
     )
 
 
-def solve_to(order: int) -> HamSolution:
+def solve_to(order: int) -> HamSolution[sp.Expr]:
     """Run the HAM solver on the Blasius problem to working order `order`."""
     return solve(build_problem(), order=order)
 
 
-def f_double_prime_at_zero(solution: HamSolution, hbar_value: sp.Expr) -> sp.Expr:
+def f_double_prime_at_zero(solution: HamSolution[sp.Expr], hbar_value: sp.Expr) -> sp.Expr:
     """Compute f''(0) from the HAM partial sum at the given ℏ.
 
     Howarth's reference value is HOWARTH_F_DOUBLE_PRIME_AT_ZERO ≈ 0.4696;
@@ -143,7 +143,7 @@ def f_double_prime_at_zero(solution: HamSolution, hbar_value: sp.Expr) -> sp.Exp
 
 
 def is_convergent(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     hbar_value: sp.Expr,
     tolerance: sp.Expr = _DEFAULT_TOLERANCE,
 ) -> bool:
@@ -166,7 +166,7 @@ def _hbar_sweep_grid() -> list[sp.Expr]:
     return [sp.Rational(k, 10) for k in range(-10, 1)]
 
 
-def analyze(solution: HamSolution) -> dict[str, sp.Expr | bool]:
+def analyze(solution: HamSolution[sp.Expr]) -> dict[str, sp.Expr | bool]:
     """Diagnostics for a Blasius solution.
 
     Returns the f''(0) values at every ℏ in the sweep grid so the

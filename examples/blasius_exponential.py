@@ -174,11 +174,11 @@ def _blasius_exponential_inverter(rhs: sp.Expr) -> sp.Expr:
     return sp.simplify(result)
 
 
-def build_problem() -> HamProblem:
+def build_problem() -> HamProblem[sp.Expr]:
     """Assemble the exponential-basis Blasius HAM problem."""
     u0 = ETA - sp.Integer(1) / ALPHA + sp.exp(-ALPHA * ETA) / ALPHA
     n_expr = F(ETA).diff(ETA, 3) + sp.Rational(1, 2) * F(ETA) * F(ETA).diff(ETA, 2)
-    return HamProblem(
+    return HamProblem[sp.Expr](
         L=LinearOperator(
             var=ETA,
             action=lambda e: sp.diff(e, ETA, 3) - ALPHA**2 * sp.diff(e, ETA),
@@ -200,13 +200,13 @@ def build_problem() -> HamProblem:
     )
 
 
-def solve_to(order: int) -> HamSolution:
+def solve_to(order: int) -> HamSolution[sp.Expr]:
     """Run HAM on the exponential-basis Blasius problem to working order."""
     return solve(build_problem(), order=order)
 
 
 def f_double_prime_at_zero(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     hbar_value: sp.Expr | None = None,
     *,
     substitutions: Mapping[sp.Symbol, sp.Expr] | None = None,
@@ -232,7 +232,7 @@ def f_double_prime_at_zero(
 
 
 def is_convergent(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     hbar_value: sp.Expr | None = None,
     *,
     substitutions: Mapping[sp.Symbol, sp.Expr] | None = None,
@@ -275,7 +275,7 @@ class BlasiusAnalysis(TypedDict):
     convergent_at_best: bool
 
 
-def analyze(solution: HamSolution) -> BlasiusAnalysis:
+def analyze(solution: HamSolution[sp.Expr]) -> BlasiusAnalysis:
     """Diagnostics for an exponential-basis Blasius solution.
 
     Performs a two-parameter (ℏ, alpha) grid search via
@@ -287,7 +287,7 @@ def analyze(solution: HamSolution) -> BlasiusAnalysis:
     """
     grid = _two_parameter_grid()
 
-    def norm(s: HamSolution, subs: Mapping[sp.Symbol, sp.Expr]) -> sp.Expr:
+    def norm(s: HamSolution[sp.Expr], subs: Mapping[sp.Symbol, sp.Expr]) -> sp.Expr:
         fdd = f_double_prime_at_zero(s, substitutions=subs)
         return (fdd - HOWARTH_F_DOUBLE_PRIME_AT_ZERO) ** 2
 

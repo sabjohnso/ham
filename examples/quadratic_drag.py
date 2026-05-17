@@ -89,9 +89,9 @@ BCs declared on `build_problem().L` are the homogeneous versions
 """
 
 
-def build_problem() -> HamProblem:
+def build_problem() -> HamProblem[sp.Expr]:
     """Assemble the quadratic-drag HAM problem (see module docstring)."""
-    return HamProblem(
+    return HamProblem[sp.Expr](
         L=LinearOperator(
             var=T,
             action=lambda e: sp.diff(e, T),
@@ -118,13 +118,13 @@ def taylor_reference(order: int) -> sp.Expr:
     return sp.expand(sp.series(sp.tanh(T), T, 0, order + 1).removeO())
 
 
-def solve_to(order: int) -> HamSolution:
+def solve_to(order: int) -> HamSolution[sp.Expr]:
     """Run the HAM solver on the quadratic-drag problem to working order `order`."""
     return solve(build_problem(), order=order)
 
 
 def is_convergent(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     hbar_value: sp.Expr,
     interval: tuple[sp.Expr, sp.Expr] = _DEFAULT_INTERVAL,
     threshold: sp.Expr = _DEFAULT_THRESHOLD,
@@ -153,7 +153,7 @@ def _grid_at_neg_one_neighbourhood() -> list[sp.Expr]:
     ]
 
 
-def analyze(solution: HamSolution) -> dict[str, sp.Expr | bool]:
+def analyze(solution: HamSolution[sp.Expr]) -> dict[str, sp.Expr | bool]:
     """Bundle of diagnostics for a quadratic-drag solution.
 
     Returns a dict keyed by:
@@ -165,7 +165,7 @@ def analyze(solution: HamSolution) -> dict[str, sp.Expr | bool]:
     """
     interval = (sp.Integer(0), sp.Integer(1))
 
-    def norm(s: HamSolution, h: sp.Expr) -> sp.Expr:
+    def norm(s: HamSolution[sp.Expr], h: sp.Expr) -> sp.Expr:
         return residual_l2_squared(s, h, interval)
 
     grid = _grid_at_neg_one_neighbourhood()

@@ -5,7 +5,7 @@ The `LinearOperator` data type does not enforce linearity of its
 detected by inspection without evaluating it). `ham.contracts.verify_linearity`
 gives the user an opt-in way to assert
 ~L[alpha*u + beta*v] = alpha*L[u] + beta*L[v]~ on hand- or
-strategy-supplied samples before relying on a HamProblem built with
+strategy-supplied samples before relying on a HamProblem[sp.Expr] built with
 that L.
 
 Liao's Rule of Solution Existence requires that `u_0` satisfy the
@@ -186,13 +186,13 @@ U = sp.Function("u")
 HBAR = sp.Symbol("hbar")
 
 
-def _trivial_problem(u0: sp.Expr) -> HamProblem:
+def _trivial_problem(u0: sp.Expr) -> HamProblem[sp.Expr]:
     """A HAM problem skeleton with the given u_0 and a placeholder N.
 
     verify_initial_guess only reads problem.u0 and problem.L.var, so the
     other fields can be whatever scaffolding is cheapest to build.
     """
-    return HamProblem(
+    return HamProblem[sp.Expr](
         L=LinearOperator(var=X, action=lambda e: sp.diff(e, X)),
         N=NonlinearOperator(expr=U(X), dependent=U, indep=X),
         H=sp.Integer(1),
@@ -228,7 +228,7 @@ def test_verify_initial_guess_accepts_asymptotic_bc() -> None:
     unevaluated expression here.
     """
     var = sp.Symbol("x_positive", positive=True)
-    problem = HamProblem(
+    problem = HamProblem[sp.Expr](
         L=LinearOperator(var=var, action=lambda e: sp.diff(e, var)),
         N=NonlinearOperator(expr=U(var), dependent=U, indep=var),
         H=sp.Integer(1),

@@ -97,7 +97,7 @@ def test_optimal_hbar_grid_search_selects_minus_one() -> None:
     sol = solve_to(5)
     interval = (sp.Integer(0), sp.Integer(1))
 
-    def norm(s: HamSolution, h: sp.Expr) -> sp.Expr:
+    def norm(s: HamSolution[sp.Expr], h: sp.Expr) -> sp.Expr:
         return residual_l2_squared(s, h, interval)
 
     grid = [sp.Rational(-3, 2), sp.Integer(-1), sp.Rational(-1, 2), sp.Integer(0)]

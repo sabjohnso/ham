@@ -1,7 +1,7 @@
 """Tests for homotopy-Padé acceleration (Stage 8).
 
 The classical [L/M] Padé approximant in q evaluated at q = 1; an
-alternative to `HamSolution.partial_sum()` that often converges when
+alternative to `HamSolution[sp.Expr].partial_sum()` that often converges when
 the bare partial sum does not. Reference identities:
 
   - Geometric problem (u' = u², u(0) = 1) at ℏ = -1: [0/1] Padé from
@@ -36,9 +36,9 @@ def _ivp_operator() -> LinearOperator[sp.Expr]:
     )
 
 
-def _exp_problem() -> HamProblem:
+def _exp_problem() -> HamProblem[sp.Expr]:
     """u' = u, u(0) = 1; exact solution exp(x)."""
-    return HamProblem(
+    return HamProblem[sp.Expr](
         L=_ivp_operator(),
         N=NonlinearOperator(expr=U(X).diff(X) - U(X), dependent=U, indep=X),
         H=sp.Integer(1),
@@ -47,9 +47,9 @@ def _exp_problem() -> HamProblem:
     )
 
 
-def _geometric_problem() -> HamProblem:
+def _geometric_problem() -> HamProblem[sp.Expr]:
     """u' = u², u(0) = 1; exact solution 1/(1-x)."""
-    return HamProblem(
+    return HamProblem[sp.Expr](
         L=_ivp_operator(),
         N=NonlinearOperator(expr=U(X).diff(X) - U(X) ** 2, dependent=U, indep=X),
         H=sp.Integer(1),

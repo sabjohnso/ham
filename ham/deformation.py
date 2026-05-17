@@ -12,12 +12,13 @@ stops at "produce the RHS".
 """
 
 from dataclasses import dataclass
+from typing import cast
 
 import sympy as sp
 
 from ham.nonlinear import NonlinearOperator
 from ham.operator import LinearOperator
-from ham.series import QSeries
+from ham.series import Series, SupportsCoefficientArith
 
 
 def chi_m(m: int) -> int:
@@ -31,27 +32,37 @@ def chi_m(m: int) -> int:
 
 
 @dataclass(frozen=True)
-class HamProblem:
+class HamProblem[C: SupportsCoefficientArith]:
     """The data of one HAM deformation problem.
+
+    Generic over the coefficient substrate `C` (sympy.Expr for symbolic
+    HAM, numpy.ndarray for SHAM). The `L` field carries the substrate
+    typing; the other fields (`N`, `H`, `hbar`, `u0`) stay in the
+    sympy /authoring/ language and are lifted into `C` by the backend
+    on demand (S7's `rhs_m` does this for `hbar * H`; the solver does
+    it for `u0`).
 
     Fields:
       L:    auxiliary linear operator (with homogeneous BCs declared).
       N:    nonlinear operator wrapping the original problem N[u] = 0.
       H:    auxiliary function H(x), a sympy Expr (not an operator).
-      hbar: convergence-control parameter, typically `sp.Symbol('hbar')`.
+      hbar: convergence-control parameter, typically `sp.Symbol('hbar')`
+            for sympy / SHAM-sympy; a numeric `sp.Float(value)` for
+            SHAM-float where ℏ is pre-substituted at problem
+            construction.
       u0:   initial guess u_0(x), a sympy Expr in L.var.
 
     Field names follow Liao's notation directly so the implementation
     reads as the math; PEP8 considerations are subordinated to that.
     """
 
-    L: LinearOperator[sp.Expr]
+    L: LinearOperator[C]
     N: NonlinearOperator
     H: sp.Expr
     hbar: sp.Expr
     u0: sp.Expr
 
-    def r_m(self, phi: QSeries, m: int) -> sp.Expr:
+    def r_m(self, phi: Series[C], m: int) -> C:
         """Liao's R_m: the Taylor coefficient `[q^{m-1}] N[phi]`.
 
         Stage 3's causality guarantees that only `phi.coeff(0..m-1)`
@@ -73,6 +84,17 @@ class HamProblem:
             )
         return self.N.apply_series(phi).coeff(m - 1)
 
-    def rhs_m(self, phi: QSeries, m: int) -> sp.Expr:
-        """Right-hand side of the m-th deformation equation: `hbar * H * R_m`."""
-        return self.hbar * self.H * self.r_m(phi, m)
+    def rhs_m(self, phi: Series[C], m: int) -> C:
+        """Right-hand side of the m-th deformation equation.
+
+        Computes `hbar * H * R_m`, with `hbar * H` lifted into the
+        coefficient substrate `C` via `phi.backend.lift_xonly`. For
+        sympy this is the identity (sp.Expr in, sp.Expr out, identical
+        to the pre-S7 behaviour); for the spectral float backend the
+        lift evaluates `hbar(numeric) * H(x)` on the grid, keeping the
+        product in float; for the spectral sympy backend the lift
+        evaluates `H(x)` on the grid while keeping `hbar` symbolic
+        inside each entry.
+        """
+        hbar_h_at_grid: C = phi.backend.lift_xonly(self.hbar * self.H)
+        return cast("C", hbar_h_at_grid * self.r_m(phi, m))

@@ -99,11 +99,11 @@ The deformation BC on `build_problem().L` is the homogeneous
 """
 
 
-def build_problem() -> HamProblem:
+def build_problem() -> HamProblem[sp.Expr]:
     """Assemble the Volterra HAM problem (see module docstring)."""
     integral_term = sp.Integral(U(S), (S, 0, T))
     n_expr = U(T).diff(T) - KAPPA * U(T) * (sp.Integer(1) - U(T) - integral_term)
-    return HamProblem(
+    return HamProblem[sp.Expr](
         L=LinearOperator(
             var=T,
             action=lambda e: sp.diff(e, T),
@@ -144,13 +144,13 @@ def taylor_reference(order: int) -> sp.Expr:
     return sum((c * T**k for k, c in enumerate(coeffs)), sp.Integer(0))
 
 
-def solve_to(order: int) -> HamSolution:
+def solve_to(order: int) -> HamSolution[sp.Expr]:
     """Run the HAM solver on the Volterra problem to working order `order`."""
     return solve(build_problem(), order=order)
 
 
 def is_convergent(
-    solution: HamSolution,
+    solution: HamSolution[sp.Expr],
     hbar_value: sp.Expr,
     interval: tuple[sp.Expr, sp.Expr] = _DEFAULT_INTERVAL,
     threshold: sp.Expr = _DEFAULT_THRESHOLD,
@@ -174,11 +174,11 @@ def _grid_at_neg_one_neighbourhood() -> list[sp.Expr]:
     ]
 
 
-def analyze(solution: HamSolution) -> dict[str, sp.Expr | bool]:
+def analyze(solution: HamSolution[sp.Expr]) -> dict[str, sp.Expr | bool]:
     """Diagnostics for a Volterra solution."""
     interval = _DEFAULT_INTERVAL
 
-    def norm(s: HamSolution, h: sp.Expr) -> sp.Expr:
+    def norm(s: HamSolution[sp.Expr], h: sp.Expr) -> sp.Expr:
         return residual_l2_squared(s, h, interval)
 
     grid = _grid_at_neg_one_neighbourhood()

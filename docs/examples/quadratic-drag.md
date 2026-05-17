@@ -173,6 +173,46 @@ is just \(u_0 = 0\) and the residual is \(-1\) constant, norm² = 1)
 fails clearly, while the converged \(\hbar = -1\) case (norm² ≈
 \(1.5 \times 10^{-3}\) at order 7) passes.
 
+## On the spectral substrate (SHAM)
+
+The same problem on a Chebyshev-Gauss-Lobatto grid over \([0, 1]\),
+ℏ pre-substituted to \(-1\):
+
+```python
+from examples.quadratic_drag import solve_to_spectral
+from ham.grids import ChebGLGrid
+import numpy as np
+
+grid = ChebGLGrid(N=20, domain=(0.0, 1.0))
+sol = solve_to_spectral(7, grid=grid)
+print(sol.partial_sum())              # ndarray of length 21
+print(np.max(np.abs(sol.partial_sum() - np.tanh(grid.nodes))))
+# L∞ error vs tanh on the grid ≈ 1.6e-2 (the truncation error of the
+# degree-7 Taylor of tanh on [0, 1])
+```
+
+The HamProblem shape is identical to the sympy path; only `L` (built
+via `spectral_linear_operator`) and the solver's `backend=` kwarg
+change. The diagnostics surface dispatches on the supplied `grid`:
+
+```python
+from ham.diagnostics import residual_l2_squared
+float(residual_l2_squared(sol, None, grid=grid))
+# ≈ 1.5e-3 — the Clenshaw-Curtis L² norm² of N[partial_sum], same
+# value as the sympy path's sp.integrate computation on [0, 1].
+```
+
+The sympy-scalar SHAM mode keeps ℏ symbolic inside every grid entry,
+so `hbar_curve_at(sol, x_star, grid=grid)` returns a polynomial in ℏ
+at the nearest grid node — the ℏ-curve at one point, with the same
+interpretation as the sympy substrate's `hbar_curve_at`. The
+float-scalar mode trades that for speed; the ℏ-curve at a point
+collapses to one number per ℏ value, so the user builds the curve
+via `hbar_curve_at_sweep`.
+
+See the [substrates concept page](../concepts/substrates.md) for the
+trade-off between the two scalar modes and when to pick which.
+
 ## Running the example as a script
 
 ```sh
@@ -180,4 +220,6 @@ poetry run python examples/quadratic_drag.py
 ```
 
 prints the full diagnostic bundle and ends with the validity-gate
-result. Use it as a sanity check or as a template for new examples.
+result, plus the spectral-substrate L∞ error vs tanh on the grid as
+a final line. Use it as a sanity check or as a template for new
+examples.

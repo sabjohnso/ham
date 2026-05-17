@@ -103,3 +103,78 @@ def test_hbar_remains_symbolic_in_u_k_for_k_geq_1() -> None:
     sol = solve_to(3)
     for k in range(1, sol.order + 1):
         assert HBAR in sol.phi.coeff(k).free_symbols
+
+
+# --- Spectral substrate (SHAM) -------------------------------------------
+
+
+def test_spectral_partial_sum_matches_tanh_on_grid_at_order_7() -> None:
+    """SHAM at ℏ = -1, M = 7 on a 20-node ChebGL grid matches tanh on the grid.
+
+    The HAM partial sum at ℏ = -1 reproduces the Taylor truncation of
+    tanh(t) of degree 7. The next nonzero Taylor term is
+    `62 t^9 / 2835 ≈ 0.0219` at t = 1, so the worst-case nodal error
+    is ~2-3e-2 — well below 5e-2.
+    """
+    import numpy as np
+    from examples.quadratic_drag import solve_to_spectral
+    from ham.grids import ChebGLGrid
+
+    grid = ChebGLGrid(N=20, domain=(0.0, 1.0))
+    sol = solve_to_spectral(7, grid=grid)
+    err = np.max(np.abs(sol.partial_sum() - np.tanh(grid.nodes)))
+    assert err < 5e-2
+
+
+def test_spectral_partial_sum_converges_with_order() -> None:
+    """L∞ error against tanh on the grid is monotone-decreasing in M."""
+    import numpy as np
+    from examples.quadratic_drag import solve_to_spectral
+    from ham.grids import ChebGLGrid
+
+    grid = ChebGLGrid(N=20, domain=(0.0, 1.0))
+    errors = [
+        float(np.max(np.abs(solve_to_spectral(m, grid=grid).partial_sum() - np.tanh(grid.nodes))))
+        for m in (1, 3, 5, 7)
+    ]
+    for prev, nxt in pairwise(errors):
+        assert nxt < prev
+
+
+def test_spectral_residual_l2_squared_is_small_at_converged_order() -> None:
+    """Clenshaw-Curtis L² norm² of N[partial_sum] is small at ℏ = -1, M = 7."""
+    from examples.quadratic_drag import solve_to_spectral
+    from ham.diagnostics import residual_l2_squared
+    from ham.grids import ChebGLGrid
+
+    grid = ChebGLGrid(N=20, domain=(0.0, 1.0))
+    sol = solve_to_spectral(7, grid=grid)
+    l2_sq = float(residual_l2_squared(sol, None, grid=grid))
+    # Empirically ~1.5e-3 at M=7 on [0, 1] — matches the sympy-path
+    # `residual_l2_squared(solve_to(7), -1, (0, 1))` to roundoff
+    # because both compute the same N[partial sum]² integral.
+    assert l2_sq < 5e-3
+
+
+def test_spectral_sympy_scalar_substituted_matches_float_scalar() -> None:
+    """Same HamProblem on the two scalars: sympy run at ℏ=-1 matches float run.
+
+    Validates that the two scalar paths of the SpectralBackend produce
+    consistent answers on a non-trivial example (the same logistic-
+    flavoured nonlinear ODE the smoke test in test_spectral_solve.py
+    exercises, but with the quadratic-drag N).
+    """
+    import numpy as np
+    from examples.quadratic_drag import solve_to_spectral
+    from ham.grids import ChebGLGrid
+
+    # Small grid — sympy LUsolve is O(n^3) and slow on object dtype.
+    grid = ChebGLGrid(N=6, domain=(0.0, 1.0))
+    sol_float = solve_to_spectral(3, grid=grid, scalar="float")
+    sol_sympy = solve_to_spectral(3, grid=grid, scalar="sympy", hbar_value=HBAR)
+
+    sympy_at_neg_one = np.array(
+        [float(entry.subs(HBAR, sp.Float(-1.0))) for entry in sol_sympy.partial_sum()],
+        dtype=np.float64,
+    )
+    np.testing.assert_allclose(sol_float.partial_sum(), sympy_at_neg_one, atol=1e-9)

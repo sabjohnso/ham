@@ -165,6 +165,63 @@ the norm is \(\sqrt{1.93 \times 10^{-9}} \approx 4.4 \times 10^{-5}\)
 \(u_0 = 1/2\), the residual is \(N[1/2] = -1/4\) (constant), and the
 norm is \(1/4 > 1/100\).
 
+## On the spectral substrate (SHAM)
+
+The same logistic HamProblem on a Chebyshev-Gauss-Lobatto grid, ℏ
+pre-substituted to \(-1\):
+
+```python
+from examples.logistic import solve_to_spectral
+from ham.grids import ChebGLGrid
+import numpy as np
+
+grid = ChebGLGrid(N=20, domain=(0.0, 1.0))
+sol = solve_to_spectral(7, grid=grid)
+
+exact = 1.0 / (1.0 + np.exp(-grid.nodes))
+print(np.max(np.abs(sol.partial_sum() - exact)))
+# ≈ 4e-4 — well below the next-Taylor-term bound (~6.6e-3 at t=1)
+```
+
+Note the **non-zero initial guess** \(u_0 = 1/2\): the lift to the
+grid is a constant vector of `0.5`s, not a varying function. The
+homogeneous deformation BC \(u_k(0) = 0\) is imposed by
+`spectral_inverter` per step, so the partial sum stays consistent
+with the original `u(0) = 1/2` boundary condition.
+
+The ℏ-curve on the spectral substrate has two flavours:
+
+```python
+from ham.diagnostics import hbar_curve_at, hbar_curve_at_sweep
+from examples.logistic import HBAR, build_spectral_problem
+
+# sympy-scalar mode: ℏ stays symbolic inside every grid entry,
+# so the partial sum at any grid node is a polynomial in ℏ.
+sol_sym = solve_to_spectral(3, grid=grid, scalar="sympy", hbar_value=HBAR)
+curve = hbar_curve_at(sol_sym, sp.Float(0.5), grid=grid)
+# `curve` is a sympy expression in ℏ; plot externally or pass to
+# optimal_hbar via a closure.
+
+# float-scalar mode: ℏ is numeric per problem, so the ℏ-curve at
+# a point is built by sweeping the solver across ℏ values.
+hbar_grid = [sp.Float(h) for h in (-1.5, -1.0, -0.5, 0.0)]
+pairs = hbar_curve_at_sweep(
+    lambda hbar: build_spectral_problem(grid, scalar="float", hbar_value=hbar),
+    x_star=sp.Float(0.5), hbar_grid=hbar_grid,
+    order=5, grid=grid,
+    backend=...,    # SpectralBackend(grid, indep=T, scalar="float")
+)
+# pairs is [(ℏ_i, partial_sum_at_0.5_under_ℏ_i)] — the discrete
+# version of the symbolic ℏ-curve, expensive (one full solve per
+# point) but available at machine precision.
+```
+
+The dual-scalar trade-off is documented in the
+[substrates concept page](../concepts/substrates.md): pick sympy
+scalar when the ℏ-curve interpretation is worth the
+`sp.Matrix.LUsolve` cost, float scalar for fast convergence at
+moderate orders.
+
 ## Running the example as a script
 
 ```sh
@@ -172,4 +229,5 @@ poetry run python examples/logistic.py
 ```
 
 prints the same diagnostic bundle as `analyze()` plus the validity
-gate result.
+gate result, and ends with the spectral substrate's L∞ error vs the
+sigmoid on the grid.

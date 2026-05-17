@@ -45,6 +45,7 @@ At `hbar = -1` the HAM partial sum reproduces the truncated Taylor
 expansion of the sigmoid, the deepest cross-check available.
 """
 
+import numpy as np
 import sympy as sp
 from ham.deformation import HamProblem
 from ham.diagnostics import (
@@ -53,9 +54,11 @@ from ham.diagnostics import (
     residual,
     residual_l2_squared,
 )
+from ham.grids import ChebGLGrid
 from ham.nonlinear import NonlinearOperator
 from ham.operator import BoundaryCondition, LinearOperator
 from ham.solver import HamSolution, solve
+from ham.spectral import Scalar, SpectralBackend, spectral_linear_operator
 
 T = sp.Symbol("t")
 U = sp.Function("u")
@@ -163,6 +166,69 @@ def analyze(solution: HamSolution[sp.Expr]) -> dict[str, sp.Expr | bool]:
     }
 
 
+# --- Spectral substrate (SHAM) -------------------------------------------
+
+
+def build_spectral_problem(
+    grid: ChebGLGrid,
+    scalar: Scalar = "float",
+    *,
+    hbar_value: sp.Expr | None = None,
+) -> HamProblem[np.ndarray]:
+    """Same logistic HAM problem on the spectral substrate over `grid`.
+
+    `scalar="float"` pre-substitutes ℏ to a numeric value (defaults to
+    -1, the canonical Taylor-collapsing evaluation). `scalar="sympy"`
+    keeps ℏ symbolic inside every grid entry so the partial sum at any
+    node is a polynomial in ℏ — the same interpretation as
+    `build_problem()`'s sympy path, sampled at the grid nodes.
+
+    Initial guess `u_0 = 1/2` is the *non-zero* constant required by
+    the original BC `u(0) = 1/2`; lifted to the grid this is a constant
+    vector. The deformation BC `u_k(0) = 0` for k >= 1 is imposed by
+    `spectral_inverter` per step.
+    """
+    if hbar_value is None:
+        hbar_value = sp.Float(-1.0) if scalar == "float" else HBAR
+    return HamProblem(
+        L=spectral_linear_operator(
+            U(T).diff(T),
+            dependent=U,
+            indep=T,
+            grid=grid,
+            scalar=scalar,
+            bcs=(BoundaryCondition(point=sp.Integer(0), derivative_order=0),),
+        ),
+        N=NonlinearOperator(
+            expr=U(T).diff(T) - U(T) + U(T) ** 2,
+            dependent=U,
+            indep=T,
+        ),
+        H=sp.Integer(1),
+        hbar=hbar_value,
+        u0=sp.Rational(1, 2),
+    )
+
+
+def solve_to_spectral(
+    order: int,
+    *,
+    grid: ChebGLGrid | None = None,
+    scalar: Scalar = "float",
+    hbar_value: sp.Expr | None = None,
+) -> HamSolution[np.ndarray]:
+    """Run the spectral HAM solver on the logistic problem.
+
+    Default grid is `ChebGLGrid(N=20, domain=(0.0, 1.0))` — the matching
+    interval for the symbolic path's `[0, 1]` residual norm.
+    """
+    if grid is None:
+        grid = ChebGLGrid(N=20, domain=(0.0, 1.0))
+    backend = SpectralBackend(grid, indep=T, scalar=scalar)
+    problem = build_spectral_problem(grid, scalar=scalar, hbar_value=hbar_value)
+    return solve(problem, order=order, backend=backend)
+
+
 if __name__ == "__main__":  # pragma: no cover -- runnable script entry point
     M = 7
     sol = solve_to(M)
@@ -175,3 +241,12 @@ if __name__ == "__main__":  # pragma: no cover -- runnable script entry point
     print(f"  optimal ℏ over grid:         {analysis['optimal_hbar']}")
     print(f"  L² norm² at optimal ℏ:       {analysis['l2_norm_at_optimal']}")
     print(f"  convergent at ℏ = -1:        {analysis['convergent_at_neg_one']}")
+
+    print()
+    print(f"Spectral redo, ChebGLGrid(N=20, [0, 1]), float scalar, ℏ = -1, M = {M}")
+    grid = ChebGLGrid(N=20, domain=(0.0, 1.0))
+    sol_spec = solve_to_spectral(M, grid=grid)
+    partial = sol_spec.partial_sum()
+    exact = 1.0 / (1.0 + np.exp(-grid.nodes))
+    err = float(np.max(np.abs(partial - exact)))
+    print(f"  L∞ error vs sigmoid on grid: {err:.3e}")

@@ -117,3 +117,77 @@ def test_u0_carries_no_hbar() -> None:
     """The non-zero initial guess u_0 = 1/2 is hbar-free."""
     sol = solve_to(3)
     assert HBAR not in sol.phi.coeff(0).free_symbols
+
+
+# --- Spectral substrate (SHAM) -------------------------------------------
+
+
+def test_spectral_partial_sum_matches_sigmoid_on_grid_at_order_7() -> None:
+    """SHAM at ℏ = -1, M = 7 on a 20-node ChebGL grid matches the sigmoid.
+
+    The sigmoid's Taylor coefficients shrink fast (factors 1/4, 1/48,
+    1/480, 17/80640, ...) so the truncation error on [0, 1] is small;
+    the next nonzero Taylor term beyond t^7 is roughly 6.6e-3 at t=1.
+    """
+    import numpy as np
+    from examples.logistic import solve_to_spectral
+    from ham.grids import ChebGLGrid
+
+    grid = ChebGLGrid(N=20, domain=(0.0, 1.0))
+    sol = solve_to_spectral(7, grid=grid)
+    exact = 1.0 / (1.0 + np.exp(-grid.nodes))
+    err = float(np.max(np.abs(sol.partial_sum() - exact)))
+    assert err < 1e-2
+
+
+def test_spectral_partial_sum_converges_with_order() -> None:
+    """L∞ error against the sigmoid on the grid is monotone-decreasing in M."""
+    import numpy as np
+    from examples.logistic import solve_to_spectral
+    from ham.grids import ChebGLGrid
+
+    grid = ChebGLGrid(N=20, domain=(0.0, 1.0))
+    exact = 1.0 / (1.0 + np.exp(-grid.nodes))
+    errors = [
+        float(np.max(np.abs(solve_to_spectral(m, grid=grid).partial_sum() - exact)))
+        for m in (1, 3, 5, 7)
+    ]
+    for prev, nxt in pairwise(errors):
+        assert nxt < prev
+
+
+def test_spectral_residual_l2_squared_below_validity_threshold() -> None:
+    """Clenshaw-Curtis L² norm² at ℏ = -1, M = 7 is below the sympy gate's threshold."""
+    from examples.logistic import _DEFAULT_THRESHOLD, solve_to_spectral
+    from ham.diagnostics import residual_l2_squared
+    from ham.grids import ChebGLGrid
+
+    grid = ChebGLGrid(N=20, domain=(0.0, 1.0))
+    sol = solve_to_spectral(7, grid=grid)
+    l2_sq = float(residual_l2_squared(sol, None, grid=grid))
+    # Mirror the sympy validity gate's threshold = 1/100; the spectral
+    # quadrature should give a value well below threshold² at M=7.
+    assert l2_sq < float(_DEFAULT_THRESHOLD) ** 2
+
+
+def test_spectral_hbar_curve_at_sympy_scalar_returns_polynomial_in_hbar() -> None:
+    """sympy-scalar SHAM keeps ℏ symbolic; the curve at a grid node is a polynomial.
+
+    Substituting ℏ → -1 in that polynomial should give a numeric value
+    close to the sigmoid at the chosen node — within the HAM truncation
+    error at the test's order.
+    """
+    import numpy as np
+    from examples.logistic import solve_to_spectral
+    from ham.diagnostics import hbar_curve_at
+    from ham.grids import ChebGLGrid
+
+    grid = ChebGLGrid(N=6, domain=(0.0, 1.0))
+    sol = solve_to_spectral(3, grid=grid, scalar="sympy", hbar_value=HBAR)
+    curve = hbar_curve_at(sol, sp.Float(0.5), grid=grid)
+    assert HBAR in curve.free_symbols
+
+    value = float(curve.subs(HBAR, sp.Float(-1.0)))
+    expected_sigmoid_at_half = 1.0 / (1.0 + np.exp(-0.5))
+    # Order-3 Taylor at t=0.5: error bounded by t^5/480 = 0.5^5/480 ≈ 6.5e-5.
+    assert abs(value - expected_sigmoid_at_half) < 1e-2

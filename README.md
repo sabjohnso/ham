@@ -215,6 +215,27 @@ closed-form Taylor expansions (tanh, sigmoid), Taylor recurrences
 `tests/test_diagnostics_spectral.py` pin the SHAM substrate end to end
 against the same problems.
 
+## Documentation
+
+The narrative docs (tutorial, concept pages, worked-example
+walk-throughs, design notes, auto-extracted API reference) are built
+with [`mkdocs`](https://www.mkdocs.org/) +
+[`mkdocs-material`](https://squidfunk.github.io/mkdocs-material/) +
+[`mkdocstrings`](https://mkdocstrings.github.io/). The doc tooling is
+in the `docs` Poetry group, separate from the runtime install so
+end-users don't pull it by default.
+
+```sh
+poetry install --with docs                      # one-time: install doc tooling
+poetry run mkdocs serve                         # live-reload at http://127.0.0.1:8000
+poetry run mkdocs build --strict                # static build to site/; fail on broken links
+```
+
+`mkdocs serve` watches `docs/`, `mkdocs.yml`, and the `ham/` package
+(so `mkdocstrings` re-extracts docstrings on edit) and rebuilds on
+every save. Use `--strict` on CI-shaped builds to catch broken
+cross-references before they ship.
+
 ## Continuous integration
 
 `.github/workflows/test.yml` runs on push to `main` and on pull requests.

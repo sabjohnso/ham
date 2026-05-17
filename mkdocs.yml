@@ -85,6 +85,7 @@ nav:
       - The deformation chain: concepts/deformation-chain.md
       - Convergence: concepts/convergence.md
       - Padé acceleration: concepts/pade-acceleration.md
+      - Substrates: concepts/substrates.md
   - Worked examples:
       - examples/index.md
       - Quadratic drag: examples/quadratic-drag.md

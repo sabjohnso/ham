@@ -20,7 +20,15 @@ builds on the previous — or jump to the topic you need.
   partial sum at \(q = 1\) diverges; the homotopy-Padé approximant
   analytically continues past that radius and often gives the right
   answer anyway.
+- **[Substrates: where the coefficients live](substrates.md)** — the
+  homotopy chain doesn't care whether each \(u_k(x)\) is a sympy
+  expression or a grid vector. The library is generic over a
+  substrate abstraction; the symbolic-HAM and Spectral-HAM modes are
+  two concrete substrates sharing the same solver loop.
 
 The references throughout are Liao's book
 *Beyond Perturbation* (Chapman & Hall/CRC 2003) and the 2009 review
 paper *Notes on the homotopy analysis method* (CNSNS 14: 983–997).
+The substrate page additionally references Motsa, Sibanda, & Shateyi
+(CNSNS 15, 2010, the SHAM origin paper) and Trefethen, *Spectral
+Methods in MATLAB* (SIAM 2000).

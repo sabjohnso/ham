@@ -295,6 +295,86 @@ closed-form solution. That kind of result is the reason
 [Liao §2.3.7](concepts/pade-acceleration.md) treats homotopy-Padé as
 an indispensable companion to the bare partial sum.
 
+## Step 10 — Same problem, spectral substrate (SHAM)
+
+Everything above ran on the sympy substrate: coefficients were
+`sp.Expr` in the independent variable, `L.invert` called
+`sp.dsolve` (or its `antiderivative` shortcut), `N.apply_series`
+compiled to sympy arithmetic. The library is generic over the
+substrate; switching to **SHAM** — coefficients as `numpy.ndarray`
+of grid values, `L.invert` as a dense linear solve with BCs imposed
+by row replacement — touches only the construction of `L` and the
+`backend=` kwarg on `solve`.
+
+The canonical problem on a Chebyshev-Gauss-Lobatto grid over
+\([0, 1]\), at \(\hbar = -1\) pre-substituted:
+
+```python
+from ham.grids import ChebGLGrid
+from ham.spectral import SpectralBackend, spectral_linear_operator
+
+grid = ChebGLGrid(N=16, domain=(0.0, 1.0))
+backend = SpectralBackend(grid, indep=t, scalar="float")
+
+logistic_spectral = HamProblem(
+    L=spectral_linear_operator(
+        u(t).diff(t),                # the same L expression
+        dependent=u, indep=t, grid=grid, scalar="float",
+        bcs=(BoundaryCondition(point=sp.Integer(0), derivative_order=0),),
+    ),
+    N=NonlinearOperator(             # the same N — apply_series is substrate-generic
+        expr=u(t).diff(t) - u(t) + u(t) ** 2,
+        dependent=u, indep=t,
+    ),
+    H=sp.Integer(1),
+    hbar=sp.Float(-1.0),             # numeric on the float spectral backend
+    u0=sp.Rational(1, 2),
+)
+
+solution = solve(logistic_spectral, order=5, backend=backend)
+print(solution.partial_sum())
+# numpy array of length 17 — the sigmoid Taylor truncation evaluated
+# at the Chebyshev nodes; matches `1/(1 + e^{-t})` to truncation error.
+```
+
+The diagnostics surface follows the same dispatch: pass `grid=` for
+the spectral path.
+
+```python
+from ham.diagnostics import residual, residual_l2_squared, hbar_curve_at_sweep
+
+r = residual(solution)                                 # numpy array
+print(float(residual_l2_squared(solution, None, grid=grid)))
+# Clenshaw-Curtis quadrature of the residual on the grid; small at
+# converged order.
+
+def factory(hbar_value):
+    return HamProblem(
+        L=logistic_spectral.L,
+        N=logistic_spectral.N,
+        H=logistic_spectral.H,
+        hbar=hbar_value,
+        u0=logistic_spectral.u0,
+    )
+
+hbar_grid = [sp.Float(h) for h in (-1.5, -1.0, -0.5, 0.0)]
+pairs = hbar_curve_at_sweep(
+    factory, x_star=sp.Float(0.5), hbar_grid=hbar_grid,
+    order=5, grid=grid, backend=backend,
+)
+# [(ℏ_i, u^(M)(0.5) at ℏ_i)] — the float-substrate ℏ-curve, built by
+# re-running the solver per ℏ value because ℏ is numeric on this path.
+```
+
+On the **sympy-scalar** spectral path (`scalar="sympy"`) every grid
+entry is a sympy expression in ℏ, so `hbar_curve_at(sol, x_star,
+grid=grid)` returns the polynomial in ℏ at the nearest grid node
+directly — same interpretation as the sympy substrate, just sampled
+at one point rather than over a continuous range. The trade-off is
+speed: `sp.Matrix.LUsolve` on object arrays is much slower than
+`np.linalg.solve` on floats. Pick the scalar mode based on whether
+the ℏ-curve interpretation is worth the cost.
+
 ## Where to go next
 
 - [Concepts](concepts/index.md): how the homotopy equation works, why
@@ -307,4 +387,8 @@ an indispensable companion to the bare partial sum.
   adaptive-ℏ observation on quadratic drag and the joint (ℏ, α)
   optimum on Blasius-exponential.
 - [API reference](api/index.md): the public surface of every module,
-  extracted from docstrings.
+  extracted from docstrings, organised by substrate / algebraic-core
+  / spectral layer.
+- [Stage history](design/stages.md): the substrate-parametrisation arc
+  S0-S9 that landed the spectral backend on top of the original
+  Stage 1-13 algebraic core.

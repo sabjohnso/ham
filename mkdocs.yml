@@ -94,6 +94,7 @@ nav:
       - Blasius (exponential basis): examples/blasius-exponential.md
   - API reference:
       - api/index.md
+      - ham.backend: api/backend.md
       - ham.series: api/series.md
       - ham.operator: api/operator.md
       - ham.nonlinear: api/nonlinear.md
@@ -102,6 +103,8 @@ nav:
       - ham.diagnostics: api/diagnostics.md
       - ham.pade: api/pade.md
       - ham.contracts: api/contracts.md
+      - ham.grids: api/grids.md
+      - ham.spectral: api/spectral.md
   - Design notes:
       - design/index.md
       - Tenets: design/tenets.md

@@ -1,10 +1,12 @@
 # `ham`: the Homotopy Analysis Method in Python
 
-A symbolic-math library for nonlinear differential and algebraic equations,
-built on Liao's *Homotopy Analysis Method* (HAM). Pure `sympy` — operates on
-formal power series in the embedding parameter `q` with symbolic
-coefficients in the independent variable, then accelerates the resulting
-series at `q = 1` either directly or via Padé.
+A library for nonlinear differential and algebraic equations, built on
+Liao's *Homotopy Analysis Method* (HAM). The algebraic core operates
+on formal power series in the embedding parameter `q` with
+substrate-generic coefficients: classical symbolic HAM (`sympy.Expr`
+in the independent variable) or the **Spectral HAM** (SHAM) variant
+(`numpy.ndarray` of nodal values on a Chebyshev grid). Same solver
+loop, same diagnostics, same algebraic laws across both substrates.
 
 ## What HAM is, briefly
 
@@ -23,20 +25,34 @@ convergence-control parameter `ℏ` is a free knob: chosen well, it makes
 the partial sum `Σ u_k(x)` converge to the true solution faster and over
 a wider domain than classical perturbation methods.
 
-References: Liao, *Beyond Perturbation* (Chapman & Hall/CRC 2003); Liao,
-*Notes on the homotopy analysis method: Some definitions and theorems*,
-Comm. Nonlinear Sci. Numer. Simul. 14 (2009) 983-997.
+The **Spectral** variant (SHAM) keeps the same homotopy and the same
+deformation chain but discretises every `u_k` on a Chebyshev-Gauss-
+Lobatto grid. `L.invert` becomes a dense linear solve with BCs imposed
+by row replacement; `N[φ]` is evaluated via the differentiation matrix
+and element-wise products. SHAM trades the symbolic ℏ-curve for fast
+linear algebra and stronger numerical convergence behaviour at
+moderate truncation orders.
+
+References:
+
+- Liao, *Beyond Perturbation* (Chapman & Hall/CRC 2003) — the
+  symbolic HAM reference.
+- Liao, *Notes on the homotopy analysis method: Some definitions and
+  theorems*, Comm. Nonlinear Sci. Numer. Simul. 14 (2009) 983-997.
+- Motsa, Sibanda, Shateyi, *A new spectral-homotopy analysis method
+  for solving a nonlinear second order BVP*, Comm. Nonlinear Sci.
+  Numer. Simul. 15 (2010) 2293-2302 — the original SHAM paper.
 
 ## Installation
 
 Python ≥ 3.12, managed with Poetry.
 
 ```sh
-poetry install                                  # runtime + dev dependencies
-poetry run pytest                               # 252 tests, ~2 min
+poetry install                                  # runtime (sympy + numpy) + dev deps
+poetry run pytest                               # 338 tests, ~3 min
 ```
 
-## Quick example: the logistic equation
+## Quick example — sympy substrate (the logistic equation)
 
 `u'(t) = u(t)·(1 - u(t))` with `u(0) = 1/2`, exact `u(t) = 1/(1 + e^{-t})`.
 
@@ -72,6 +88,35 @@ print(solution.evaluate_at_hbar(sp.Integer(-1)))
 # t**5/480 - t**3/48 + t/4 + 1/2   (the sigmoid Taylor expansion)
 ```
 
+## Quick example — spectral substrate (the same problem on a grid)
+
+```python
+from ham.grids import ChebGLGrid
+from ham.spectral import SpectralBackend, spectral_linear_operator
+
+grid = ChebGLGrid(N=16, domain=(0.0, 1.0))
+backend = SpectralBackend(grid, indep=t, scalar="float")
+
+problem = HamProblem(
+    L=spectral_linear_operator(
+        u(t).diff(t), dependent=u, indep=t, grid=grid, scalar="float",
+        bcs=(BoundaryCondition(point=sp.Integer(0), derivative_order=0),),
+    ),
+    N=NonlinearOperator(expr=u(t).diff(t) - u(t) + u(t)**2, dependent=u, indep=t),
+    H=sp.Integer(1),
+    hbar=sp.Float(-1.0),    # pre-substituted on the float spectral backend
+    u0=sp.Rational(1, 2),
+)
+
+solution = solve(problem, order=5, backend=backend)
+print(solution.partial_sum())
+# numpy array of length 17 — the sigmoid Taylor truncation at the grid nodes
+```
+
+The two paths share the `HamProblem` / `NonlinearOperator` / `solve`
+shape exactly; only `L`'s construction and the `backend=` kwarg
+change.
+
 ## Homotopy-Padé acceleration: exact answers from two coefficients
 
 For problems where the formal series in `q` has radius of convergence less
@@ -89,17 +134,31 @@ print(homotopy_pade(sol, 0, 1, sp.Integer(-1)))
 # 1/(1 - x)   (the exact closed form, from two coefficients)
 ```
 
+Padé currently runs on the sympy substrate only; the block-structured
+spectral analogue is a tracked follow-up.
+
 ## Library layout
 
 ```
 ham/
-  series.py        QSeries — truncated formal power series in q
-  operator.py      LinearOperator with first-class BCs and pluggable invert
-  nonlinear.py     NonlinearOperator — sympy-tree compiler to QSeries arithmetic
-  deformation.py   HamProblem + r_m / rhs_m for the m-th deformation equation
-  solver.py        solve(problem, order) → HamSolution + per-step solve_step
-  diagnostics.py   residual, L² / discrete norms, ℏ-curve, optimal-ℏ
-  pade.py          homotopy-Padé acceleration
+  backend.py       Backend[C] Protocol — six ops bridging the algebraic core
+                   to any coefficient substrate. SympyBackend included.
+  series.py        Series[C] — substrate-generic truncated power series in q.
+                   QSeries is the sympy-baked back-compat shim.
+  operator.py      LinearOperator[C] with first-class BCs and pluggable invert.
+                   sympy_dsolve_inverter is the sympy-substrate factory.
+  nonlinear.py     NonlinearOperator — sympy-tree compiler whose tree-walker
+                   dispatches through phi.backend.
+  deformation.py   HamProblem[C] + r_m / rhs_m for the m-th deformation equation.
+  solver.py        solve(problem, order, backend=...) → HamSolution[C].
+  diagnostics.py   residual, L² / discrete norms, ℏ-curve, optimal-ℏ.
+                   Substrate-aware dispatch on grid= kwarg.
+  pade.py          Homotopy-Padé acceleration (sympy substrate only).
+  contracts.py     Opt-in algebraic-contract checkers (verify_linearity with
+                   injectable equal=; verify_initial_guess).
+  grids.py         Grid Protocol + ChebGLGrid (Trefethen cheb.m + clencurt.m).
+  spectral.py      SpectralBackend(grid, indep, scalar) + spectral_linear_operator
+                   + spectral_inverter (SHAM substrate).
 
 examples/
   quadratic_drag.py        v' = 1 - v², v(0) = 0                   (exact tanh)
@@ -117,25 +176,27 @@ importable module (factory functions) and a runnable script.
 
 Once you have a `HamSolution`, the rest of the library is composition:
 
-| call | result |
-| --- | --- |
-| `sol.partial_sum()` | `Σ u_k(x)`, ℏ symbolic |
-| `sol.evaluate_at_hbar(value)` | partial sum with ℏ substituted |
-| `residual(sol, hbar)` | `N` applied to the partial sum |
-| `residual_l2_squared(sol, hbar, interval)` | `∫ residual² dx` |
-| `residual_discrete_sum_of_squares(sol, hbar, samples)` | `Σ residual(x_i)²` |
-| `hbar_curve_at(sol, x_star)` | partial sum at `x*` as a polynomial in ℏ |
-| `optimal_hbar(sol, grid, norm_fn)` | grid value minimising `norm_fn` |
-| `homotopy_pade(sol, L, M, hbar)` | `[L/M]` Padé at `q = 1` |
+| call | sympy substrate | spectral substrate |
+| --- | --- | --- |
+| `sol.partial_sum()` | `Σ u_k(x)`, ℏ symbolic | grid vector, length N+1 |
+| `sol.evaluate_at_hbar(value)` | partial sum with ℏ substituted | sympy substrate only |
+| `residual(sol, hbar)` | `N` applied to the partial sum | grid vector via apply_series order-0 |
+| `residual_l2_squared(sol, hbar, interval=..., grid=...)` | `∫ residual² dx` | `Σ wᵢ · residual²` |
+| `residual_discrete_sum_of_squares(sol, hbar, samples)` | `Σ residual(x_i)²` | sympy substrate only |
+| `hbar_curve_at(sol, x_star, grid=...)` | polynomial in ℏ | nearest-node entry |
+| `hbar_curve_at_sweep(factory, x_star, hbar_grid, order, grid, backend)` | — | sweep solver per ℏ |
+| `optimal_hbar(sol, grid, norm_fn)` | grid value minimising `norm_fn` | use sweep + `min` |
+| `homotopy_pade(sol, L, M, hbar)` | `[L/M]` Padé at `q = 1` | not yet — sympy only |
 
-ℏ is kept symbolic through every stage; downstream code substitutes when
-ready. The same `solve()` output can be evaluated at any number of ℏ
-values without re-running the loop.
+On the sympy and sympy-scalar spectral substrates ℏ is kept symbolic
+through every stage; downstream code substitutes when ready. On the
+float spectral substrate ℏ is a numeric parameter set at problem
+construction.
 
 ## Development
 
 ```sh
-poetry run pytest                               # full test suite
+poetry run pytest                               # full test suite (338 tests)
 poetry run pytest tests/test_x.py::test_name    # single test
 poetry run ruff check ham/ tests/ examples/     # lint
 poetry run ruff format                          # format
@@ -144,11 +205,15 @@ poetry run pre-commit run --all-files           # pre-commit hooks
 ```
 
 The library follows Algebra-Driven Design: each module exposes algebraic
-laws (linearity of `L`, Cauchy structure of `N`, causality in `q`, etc.)
-and Hypothesis property tests assert those laws directly. Worked examples
-under `tests/examples/` pin end-to-end output against closed-form Taylor
-expansions (tanh, sigmoid), Taylor recurrences (Volterra), and published
-numerical references (Howarth's Blasius `f''(0) ≈ 0.4696`).
+laws (linearity of `L`, Cauchy structure of `N`, causality in `q`, the
+diff/integrate inverse on substrate-resolved polynomials, etc.) and
+Hypothesis property tests assert those laws directly across substrates.
+Worked examples under `tests/examples/` pin end-to-end output against
+closed-form Taylor expansions (tanh, sigmoid), Taylor recurrences
+(Volterra), and published numerical references (Howarth's Blasius
+`f''(0) ≈ 0.4696`); `tests/test_spectral_solve.py` and
+`tests/test_diagnostics_spectral.py` pin the SHAM substrate end to end
+against the same problems.
 
 ## Continuous integration
 

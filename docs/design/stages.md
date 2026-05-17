@@ -267,23 +267,99 @@ The post-build pass added one new public module
 (`ham.contracts`), no new examples, and no breaking changes.
 Cumulative test count grew 226 → 252.
 
+## Substrate-parametrisation arc (S0-S9, 2026-05-13/17)
+
+The Stage 1-13 line settled the algebraic core for the sympy
+substrate. To make the same scaffolding serve the **Spectral HAM**
+substrate (numpy arrays on a Chebyshev grid) without forking the
+library, the next nine stages refactored every module to be generic
+over the coefficient type, then added the spectral substrate on top.
+
+The architectural target was set in `PLAN.org`: rather than building
+a parallel `ham.spectral` package, parametrise each existing module
+over a `Backend[C]` Protocol. Property tests covering each algebraic
+law would then run unchanged across substrates, with only the
+equality comparator changing at the verification site.
+
+| Stage | Headline change | Module(s) touched |
+| --- | --- | --- |
+| S0 | `Backend[C]` Protocol (six ops: `zero`, `one`, `lift_xonly`, `diff_x`, `integrate_x`, `normalize`) + `SympyBackend`. Equality stays out of the Backend (PLAN.org D-4). | new [`ham.backend`](../api/backend.md) |
+| S1 | `Series[C: SupportsCoefficientArith]` generic; `QSeries` becomes a sympy-baked subclass; methods use `Self` returns and `type(self)` construction so subclasses propagate. | [`ham.series`](../api/series.md) |
+| S2 | `NonlinearOperator._compile` reads `phi.backend` and dispatches all leaves through it. Solver constructs `SympyBackend(problem.L.var)` so examples on `t`/`eta` integrate w.r.t. the right variable. | [`ham.nonlinear`](../api/nonlinear.md), [`ham.solver`](../api/solver.md) |
+| S3 | `LinearOperator[C]` generic; `sympy_dsolve_inverter` exposed as a public factory; `verify_linearity` takes an injectable `equal` comparator (D-4). | [`ham.operator`](../api/operator.md), [`ham.contracts`](../api/contracts.md) |
+| S4 | `Backend.normalize` (sympy = `sp.expand`, spectral = identity); the solver's two former `sp.expand` sites route through it. | [`ham.backend`](../api/backend.md), [`ham.solver`](../api/solver.md) |
+| S5 | `Grid` Protocol + `ChebGLGrid` (Trefethen `cheb.m` + `clencurt.m`); `SpectralBackend(grid, indep, scalar)` over `scalar ∈ {"float", "sympy"}` (D-1's dual-scalar architecture). | new [`ham.grids`](../api/grids.md), new [`ham.spectral`](../api/spectral.md) |
+| S6 | `spectral_linear_operator` parses linear-in-\(u\) sympy expressions into the dense \(L\) matrix; `spectral_inverter` imposes BCs by row replacement. `verify_linearity` with `equal=np.allclose` is the D-4 demonstration. | [`ham.spectral`](../api/spectral.md) |
+| S7 | `HamProblem[C]` and `HamSolution[C]` generic; `solve(problem, order, backend=...)` is the end-to-end substrate-agnostic entry. End-to-end smoke tests on `u' = u, u(0) = 1` pass on both scalars. | [`ham.deformation`](../api/deformation.md), [`ham.solver`](../api/solver.md) |
+| S8 | Diagnostics dispatch on backend: `residual` via apply_series order-0 trick on the spectral side; `residual_l2_squared(grid=...)` uses Clenshaw-Curtis; `hbar_curve_at_sweep` builds the float-substrate ℏ-curve by re-running the solver per ℏ. | [`ham.diagnostics`](../api/diagnostics.md) |
+| S9 | `homotopy_pade` ships sympy-only for the spectral release; spectral inputs raise `NotImplementedError` with a pointer to the block-structured-Padé follow-up. | [`ham.pade`](../api/pade.md) |
+
+### Design decisions recorded along the way
+
+PLAN.org tracked four design questions that were resolved early and
+shaped the rest of the arc:
+
+- **D-1 — Dual-scalar `SpectralBackend`.** The spectral substrate
+  supports both `scalar="float"` (classical SHAM; ℏ-curves via
+  external sweep) and `scalar="sympy"` (ℏ inline inside every grid
+  entry as an `ndarray[object]` of sympy expressions). The two
+  paths share every line of code except the linear solver in
+  `integrate_x` / `spectral_inverter`.
+- **D-2 — Single generic `Series[C]`.** Reviewing the original
+  `ham.series` line by line showed every method was either pure
+  q-arithmetic or routed through Python `+ - * /int`, which both
+  substrates support. One generic class with a `QSeries` back-compat
+  shim was cleaner than forking the type.
+- **D-3 — Grid Protocol with identity-pinned instances.** Each
+  `HamProblem` carries one `Grid` instance shared across the
+  `SpectralBackend`, the `spectral_linear_operator`, and the
+  diagnostic quadrature. Cached \(D^k\) and quadrature weights are
+  computed once per grid.
+- **D-4 — Equality is an injected comparator, not a Backend method.**
+  `verify_linearity` takes an `equal: Callable[[C, C], bool]` kwarg
+  defaulting to the sympy `sp.expand`-based comparator. Spectral
+  callers pass `np.allclose` (float scalar) or a sympy element-wise
+  closure (sympy scalar). `LinearOperator` stays substrate-agnostic.
+
+### What the arc delivered
+
+- Two substrates ship from one solver loop: 338 tests pass; ruff +
+  ruff format + mypy strict clean across `ham/`, `tests/`,
+  `examples/`.
+- Algebra-driven design dividend: the substrate laws (zero / one
+  identities, diff∘integrate = id, linearity of `L`, the commuting
+  diagram `[q^k] N.apply_series(phi) = [q^k] N.apply_scalar(Σ
+  phi.coeff(j) q^j)`) are pinned by Hypothesis property tests against
+  every Backend fixture. Adding a new substrate runs the same laws
+  for free.
+- The S7 smoke test (`u' = u, u(0) = 1` on `[0, 1]`) confirms the
+  three backends produce the same answer to substrate-appropriate
+  tolerance, with the sympy-scalar spectral run reproducing the
+  float-scalar result after `subs(ℏ, -1)`.
+
 ## Where to go next
 
-The Stage-1 to Stage-13 ladder has stabilised; remaining
-extension directions live above the current public surface:
+The Stage-1 to Stage-13 line and the S0-S9 substrate-parametrisation
+arc together cover the public surface as it ships. Remaining
+extension directions live above:
 
-- **Multi-point Padé and Hermite-Padé.** Generalisations of
-  Stage 8 that compose on top of `HamSolution.phi` without
-  touching the upstream stages.
-- **More worked examples** in other base classes
-  (trigonometric basis; mixed polynomial-exponential).
+- **Rational-Chebyshev grid** for Blasius-class problems on
+  \([0, \infty)\). The Grid Protocol is the plug-in point; the
+  finite-domain spectral redo of Blasius is deferred per the S7
+  plan note.
+- **Block-structured spectral Padé.** S9's deferred follow-up:
+  the linear system has grid-vector entries; `homotopy_pade` would
+  need a substrate-aware Padé construction.
+- **Multi-point Padé and Hermite-Padé** on the sympy substrate —
+  generalisations of Stage 8 that compose on top of `HamSolution.phi`
+  without touching the upstream stages.
 - **Additional contracts.** [`ham.contracts`](../api/contracts.md)
   has room for nonlinear-polynomial form verification and
-  invertibility-on-image checks for `L`; see the module
-  docstring's extension policy.
+  invertibility-on-image checks for `L`; see the module docstring's
+  extension policy.
 
-Each new direction follows the pattern Stages 1-13 established:
-a design conversation in the PR description, sub-stages with
-red-green-refactor commits, algebraic identities pinned by
-property tests, and PLAN.org-style record of what was decided
+Each new direction follows the pattern Stages 1-13 and S0-S9
+established: a design conversation in `PLAN.org`, sub-stages with
+red-green-refactor commits, algebraic identities pinned by property
+tests, and a PLAN.org-style record of what was decided
 and why.

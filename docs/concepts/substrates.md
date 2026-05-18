@@ -63,10 +63,10 @@ comes for free. A second concrete grid — rational-Chebyshev on
 rational-Cheb quadrature, asymptotic value-at-infinity BCs, and
 basis-auto homogeneous derivative BCs. Nonzero asymptotic
 derivatives (like Blasius `f'(\infty) = 1`) still need user
-variable-transformation; block-structured spectral Padé remains
-the only outstanding [tracked follow-up][followup].
-
-[followup]: ../design/stages.md#remaining-block-structured-spectral-pade-s9-follow-up
+variable-transformation. `homotopy_pade` now supports both
+substrates: spectral solves use a block-structured per-grid-node
+construction with batched `np.linalg.solve` on the float scalar
+and `sp.Matrix.LUsolve` per node on the sympy scalar.
 
 Equality is *not* a Backend operation. The library's design
 decision is that the comparator used to decide "are these two

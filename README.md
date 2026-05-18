@@ -186,7 +186,7 @@ Once you have a `HamSolution`, the rest of the library is composition:
 | `hbar_curve_at(sol, x_star, grid=...)` | polynomial in ℏ | nearest-node entry |
 | `hbar_curve_at_sweep(factory, x_star, hbar_grid, order, grid, backend)` | — | sweep solver per ℏ |
 | `optimal_hbar(sol, grid, norm_fn)` | grid value minimising `norm_fn` | use sweep + `min` |
-| `homotopy_pade(sol, L, M, hbar)` | `[L/M]` Padé at `q = 1` | not yet — sympy only |
+| `homotopy_pade(sol, L, M, hbar)` | `[L/M]` Padé at `q = 1` | block-LU per grid node |
 
 On the sympy and sympy-scalar spectral substrates ℏ is kept symbolic
 through every stage; downstream code substitutes when ready. On the

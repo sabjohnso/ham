@@ -404,15 +404,33 @@ An end-to-end test pins `u' + u = 1, u(0) = 0, u(∞) = 1` on the
 rational grid: the spectral solve recovers `1 - exp(-x)` on the
 grid to 1e-8.
 
-### Remaining: block-structured spectral Padé (S9 follow-up)
+### Landed: block-structured spectral Padé
 
-`homotopy_pade` still rejects spectral solutions. The
-block-structured Padé construction over grid-vector coefficients
-is documented in the literature but not yet implemented here.
-The S9 decision was "ship sympy-only; spectral Padé is not the
-SHAM headline feature" — that decision still holds, but the
-construction is tracked as a follow-up rather than abandoned.
-This is the final remaining item from the post-S9 roadmap.
+`homotopy_pade` dispatches on the substrate. Spectral path: the
+Padé denominator coefficients `q_1..q_M` become per-grid-node
+vectors `q_j[i]`, and the single (M, M) sympy linear system
+decomposes into N+1 independent (M, M) systems — one per grid
+node. Float scalar: batched `(N+1, M, M)` matrix solved in one
+`np.linalg.solve` call. Sympy scalar: per-grid-node loop reusing
+`_pade_value_at_q_one` with sympy `LUsolve` — slower but produces
+a grid of sympy rational functions in ℏ that the caller can
+substitute / plot / optimise.
+
+The canonical test (the geometric problem `u' = u², u(0) = 1` at
+ℏ = -1, order 1) holds on the spectral substrate too: [0/1] Padé
+collapses to `1/(1-x)` sampled at the grid nodes, matching the
+sympy substrate to 1e-10.
+
+### All post-S9 follow-ups closed
+
+The three concrete items from the post-S9 roadmap are all DONE
+(rational-Cheb quadrature and asymptotic-BC handling in commit
+92fc5a1; spectral Padé in commit 3e4cf67). The substrate-
+parametrisation arc and its tracked follow-ups together close
+the substrate story; the next layer of extension work lives in
+the "Where to go next" section below, which now covers genuinely
+new directions (multi-point / Hermite Padé, additional contracts,
+more grid families).
 
 ## Where to go next
 

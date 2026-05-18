@@ -34,7 +34,7 @@ core, solver loop, and diagnostic surface.
 | Module | Responsibility | Headline surface |
 | --- | --- | --- |
 | [`ham.diagnostics`](diagnostics.md) | Residual, L² / discrete norms, Liao's ℏ-curve, grid-search parameter optimisation. Dispatches on backend: sympy uses `sp.integrate` for L², spectral uses `grid.quadrature_weights`. `hbar_curve_at_sweep` builds the float-spectral ℏ-curve by re-running the solver per ℏ value. | `residual`, `residual_l2_squared`, `residual_discrete_sum_of_squares`, `hbar_curve_at`, `hbar_curve_at_sweep`, `optimal_hbar`, `optimal_parameters` |
-| [`ham.pade`](pade.md) | Homotopy-Padé acceleration in \(q\). Currently sympy-only; spectral substrate is rejected with a tracking pointer to the block-structured follow-up. | `homotopy_pade` |
+| [`ham.pade`](pade.md) | Homotopy-Padé acceleration in \(q\). Dispatches on the substrate: sympy substrate solves a single (M, M) `sp.Matrix.LUsolve`; spectral substrate decomposes into N+1 independent (M, M) solves per grid node (batched `np.linalg.solve` on the float scalar, sympy `LUsolve` loop on the sympy scalar). | `homotopy_pade` |
 
 ## Algebraic contracts
 

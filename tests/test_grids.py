@@ -221,13 +221,46 @@ def test_rational_cheb_grid_diff_matrix_recovers_exp_derivative() -> None:
     np.testing.assert_allclose(fprime_computed[1:], expected[1:], atol=1e-6)
 
 
-def test_rational_cheb_grid_quadrature_weights_not_implemented() -> None:
-    """quadrature_weights raises NotImplementedError on this grid."""
+def test_rational_cheb_grid_quadrature_integrates_decaying_exponential() -> None:
+    """sum(weights * exp(-x)) ≈ ∫_0^∞ exp(-x) dx = 1.
+
+    The canonical test integrand for rational-Cheb quadrature on
+    [0, infinity): exp(-x) decays fast enough that the j=0
+    contribution (where the weight is 0 by convention and the
+    integrand is also 0) is correctly handled, and the remaining
+    nodes sum to the exact integral within spectral accuracy.
+    """
     from ham.grids import RationalChebGrid
 
-    grid = RationalChebGrid(N=8)
-    with pytest.raises(NotImplementedError, match="rational-Cheb"):
-        _ = grid.quadrature_weights
+    grid = RationalChebGrid(N=30, L=2.0)
+    f = np.exp(-grid.nodes)  # exp(-inf) = 0 at index 0
+    integral = float(np.sum(grid.quadrature_weights * f))
+    assert abs(integral - 1.0) < 1e-6
+
+
+def test_rational_cheb_grid_quadrature_integrates_decaying_rational() -> None:
+    """sum(weights * 1/(1+x)²) ≈ ∫_0^∞ 1/(1+x)² dx = 1.
+
+    A second decay shape, this time rational rather than exponential.
+    Tests that the quadrature handles different asymptotic rates
+    without the j=0 weight convention biasing the result.
+    """
+    from ham.grids import RationalChebGrid
+
+    grid = RationalChebGrid(N=40, L=1.0)
+    f = 1.0 / (1.0 + grid.nodes) ** 2
+    f[0] = 0.0  # 1/(1+inf)² = 0; numpy gives 0, this is documentary
+    integral = float(np.sum(grid.quadrature_weights * f))
+    # Rational decay converges more slowly than exponential; ~3e-4 at N=40 is typical.
+    assert abs(integral - 1.0) < 1e-3
+
+
+def test_rational_cheb_grid_quadrature_weight_at_infinity_is_zero() -> None:
+    """weights[0] = 0 by convention (the j=0 node maps to infinity)."""
+    from ham.grids import RationalChebGrid
+
+    grid = RationalChebGrid(N=10)
+    assert grid.quadrature_weights[0] == 0.0
 
 
 def test_rational_cheb_grid_diff_matrix_power_memoised() -> None:

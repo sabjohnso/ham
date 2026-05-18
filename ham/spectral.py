@@ -178,42 +178,82 @@ def spectral_inverter(
 ) -> Callable[[_NDArrAny], _NDArrAny]:
     """Build the inverter that solves `L · u = rhs` under the declared BCs.
 
-    For each `bc` the row /content/ is `D^(bc.derivative_order)`
-    evaluated at the grid node closest to `bc.point` — that row,
-    dotted with the unknown vector `u`, computes
-    `u^(bc.derivative_order)` at that node, so setting the
+    For each finite `bc` the row /content/ is
+    `D^(bc.derivative_order)` evaluated at the grid node closest to
+    `bc.point` — that row, dotted with the unknown vector `u`,
+    computes `u^(bc.derivative_order)` at that node, so setting the
     corresponding RHS entry to `bc.value` enforces the BC. The
-    /placement/ row of `l_matrix` to overwrite is the closest unused
-    row to that evaluation index, which lets multiple BCs at the
-    same boundary node coexist (Blasius has both `f(0)=0` and
-    `f'(0)=0` at η=0; the second one displaces inward to the next
-    grid row, following Trefethen *Spectral Methods in MATLAB*
-    Program 30). The modified system is then solved with
+    /placement/ row of `l_matrix` to overwrite is the closest
+    unused row to that evaluation index, which lets multiple BCs
+    at the same boundary node coexist (Blasius has both
+    `f(0)=0` and `f'(0)=0` at η=0; the second one displaces inward
+    to the next grid row, following Trefethen *Spectral Methods in
+    MATLAB* Program 30). The modified system is then solved with
     `np.linalg.solve` (float) or `sp.Matrix.LUsolve` (sympy).
 
-    Asymptotic BCs (`bc.point.is_infinite`) are rejected — a finite
-    grid has no infinite node to anchor them to. Semi-infinite
-    problems with asymptotic BCs need `RationalChebGrid` plus
-    `spectral_inverter` extensions (the rational-Cheb D matrix has
-    a zero row at the infinity node, so additional BC handling is
-    required there — tracked as a PLAN.org follow-up).
+    Asymptotic BCs (`bc.point.is_infinite`) are supported when the
+    grid has an infinity node (e.g. `RationalChebGrid`):
+
+      - `derivative_order = 0` (`f(infinity) = A`): row replacement
+        at the infinity index with the identity row, RHS = A. The
+        natural value-at-infinity BC.
+      - `derivative_order >= 1` and `bc.value = 0`: basis-automatic.
+        Any polynomial F(xi) gives `f^(k)(x) → 0` as `x → infinity`
+        for k >= 1 (chain-rule factors of `(1-xi)^(2k)` vanish at
+        xi=1). The inverter accepts these BCs and silently skips
+        the row replacement.
+      - `derivative_order >= 1` and `bc.value != 0`: rejected with
+        an explanatory ValueError. The rational-Cheb basis cannot
+        represent functions with nonzero asymptotic derivatives;
+        problems like Blasius `f'(infinity) = 1` need a variable
+        transformation (e.g. `f = x + g` with `g'(infinity) = 0`).
+
+    A grid without an infinity node (`ChebGLGrid`) rejects every
+    `bc.point.is_infinite` with an explanatory error.
     """
     n_plus_1 = grid.nodes.shape[0]
+    infinity_indices = np.where(np.isinf(grid.nodes))[0]
+    infinity_idx = int(infinity_indices[0]) if len(infinity_indices) > 0 else None
     used_rows: set[int] = set()
     replacements: list[tuple[int, NDArray[np.float64], sp.Expr]] = []
     for bc in bcs:
         if not bc.point.is_finite:
-            raise ValueError(
-                f"spectral_inverter requires a finite BC point on a finite grid; "
-                f"got bc.point = {bc.point!r}. Semi-infinite problems need a "
-                f"rational-Chebyshev grid (S5b ships only ChebGLGrid)."
-            )
-        point_val = float(bc.point)
-        a, b = grid.domain
-        if not a <= point_val <= b:
-            raise ValueError(f"BC point {point_val} lies outside the grid's domain {grid.domain}.")
-        eval_idx = int(np.argmin(np.abs(grid.nodes - point_val)))
-        replacement_row = grid.differentiation_matrix_power(bc.derivative_order)[eval_idx, :]
+            if infinity_idx is None:
+                raise ValueError(
+                    f"spectral_inverter received bc.point = {bc.point!r} but "
+                    f"the grid has no infinity node. Use `RationalChebGrid` "
+                    f"(or another `Grid` family that includes the infinity "
+                    f"image) for asymptotic BCs."
+                )
+            if bc.derivative_order >= 1:
+                if bc.value != sp.Integer(0):
+                    raise ValueError(
+                        f"spectral_inverter rejects bc.point = {bc.point!r} "
+                        f"with derivative_order = {bc.derivative_order} and "
+                        f"bc.value = {bc.value!r}: a rational-Chebyshev basis "
+                        f"polynomial F(xi) of any degree gives "
+                        f"f^(k)(infinity) = 0 automatically for k >= 1, so "
+                        f"a nonzero asymptotic derivative cannot be "
+                        f"represented. Transform variables to reduce to a "
+                        f"value-at-infinity BC: for Blasius f'(infinity) = 1, "
+                        f"substitute f = x + g, then g'(infinity) = 0 is the "
+                        f"basis-auto homogeneous case."
+                    )
+                # Basis-auto homogeneous case: silently skip.
+                continue
+            # derivative_order = 0: value-at-infinity BC.
+            replacement_row = np.zeros(n_plus_1)
+            replacement_row[infinity_idx] = 1.0
+            eval_idx = infinity_idx
+        else:
+            point_val = float(bc.point)
+            a, b = grid.domain
+            if not a <= point_val <= b:
+                raise ValueError(
+                    f"BC point {point_val} lies outside the grid's domain {grid.domain}."
+                )
+            eval_idx = int(np.argmin(np.abs(grid.nodes - point_val)))
+            replacement_row = grid.differentiation_matrix_power(bc.derivative_order)[eval_idx, :]
         # Pick the closest unused matrix row for placement; additional
         # BCs at the same boundary node displace inward to adjacent rows.
         distances_from_eval = np.abs(np.arange(n_plus_1) - eval_idx)

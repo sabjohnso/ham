@@ -17,12 +17,14 @@ Two concrete grids ship:
   - `RationalChebGrid(N, L=1.0)` — algebraic-map rational-Chebyshev
     on [0, infinity). Useful when the problem's natural domain is
     semi-infinite and a finite truncation would distort the solve.
-    Ships as a minimal implementation: differentiation matrix only,
-    no quadrature, no asymptotic-BC support in `spectral_inverter`
-    (the bc.point.is_finite check there rejects bc.point = sp.oo).
-    Practical SHAM on semi-infinite domains still uses truncated
-    `ChebGLGrid`; `RationalChebGrid` is the foundation for the
-    follow-up that wires asymptotic BCs and rational-Cheb quadrature.
+    Supports rational-Cheb quadrature (`quadrature_weights`) and is
+    paired with `spectral_inverter`'s asymptotic-BC handling for
+    value-at-infinity BCs (`f(infinity) = A`) and basis-auto
+    homogeneous derivative BCs (`f^(k)(infinity) = 0` for k >= 1).
+    Nonzero asymptotic-derivative BCs (`f'(infinity) = 1` à la
+    Blasius) need a variable transformation by the user that reduces
+    them to the basis-auto homogeneous case; the inverter rejects
+    them with an explanatory error.
 """
 
 from typing import Protocol
@@ -155,24 +157,8 @@ class ChebGLGrid:
 
     def _compute_quadrature_weights(self) -> NDArray[np.float64]:
         """Clenshaw-Curtis weights on [a, b]; Trefethen `clencurt.m` + domain scale."""
-        n = self._N
         a, b = self._domain
-        theta = np.pi * np.arange(n + 1) / n
-        w_ref = np.zeros(n + 1)
-        if n % 2 == 0:
-            w_ref[0] = 1.0 / (n**2 - 1)
-            w_ref[n] = w_ref[0]
-            v = np.ones(n - 1)
-            for k in range(1, n // 2):
-                v -= 2.0 * np.cos(2 * k * theta[1:n]) / (4 * k**2 - 1)
-            v -= np.cos(n * theta[1:n]) / (n**2 - 1)
-        else:
-            w_ref[0] = 1.0 / n**2
-            w_ref[n] = w_ref[0]
-            v = np.ones(n - 1)
-            for k in range(1, (n - 1) // 2 + 1):
-                v -= 2.0 * np.cos(2 * k * theta[1:n]) / (4 * k**2 - 1)
-        w_ref[1:n] = 2.0 * v / n
+        w_ref = _clenshaw_curtis_weights_reference(self._N)
         return w_ref * (b - a) / 2.0
 
 
@@ -203,19 +189,38 @@ class RationalChebGrid:
     `bc.point.is_finite` guard already rules out the asymptotic BCs
     that would require special handling there.
 
-    **Limitations** (PLAN.org follow-ups):
+    The quadrature weights transform Clenshaw-Curtis on `[-1, 1]`
+    via the Jacobian `dx/dxi = 2L/(1-xi)^2`:
 
-      - `quadrature_weights` is not implemented; the rational-Cheb
-        weighted Gauss quadrature differs from Clenshaw-Curtis and
-        is left as a follow-up. Accessing the property raises
-        `NotImplementedError`.
-      - `spectral_inverter` rejects `bc.point = sp.oo`; asymptotic
-        BCs are not yet supported on this grid. SHAM problems on
-        semi-infinite domains should use `ChebGLGrid(N, (0, x_max))`
-        with a truncated cap until that lands.
-      - `lift_xonly` of expressions that diverge at infinity (e.g.,
-        `x` itself) will produce `np.inf` / `nan` at index 0.
-        Choose `u_0` and `H` with finite limits at infinity.
+        w_x_j = w_xi_j · 2 L / (1 - xi_j)^2,    j = 1..N
+
+    with `w_x_0 = 0` by convention — the integrand is assumed to
+    decay at infinity (the SHAM residual on a converged solve does),
+    so the j=0 contribution is dropped rather than tripping a
+    `0 · inf` indeterminate. For integrands that grow at infinity
+    this quadrature returns nonsense; users should pick problem
+    formulations whose residual decays at the outflow boundary.
+
+    Asymptotic BCs:
+
+      - `f(infinity) = A`: supported via `spectral_inverter`
+        (identity row at the infinity index, RHS = A).
+      - `f^(k)(infinity) = 0` for k >= 1: basis-automatic. The
+        rational-Cheb polynomial `F(xi)` of degree N gives
+        `f^(k)(x) → 0` as `x → infinity` by construction (chain-rule
+        factors of `(1-xi)^(2k)` kill the derivative at xi=1). The
+        inverter accepts these BCs and silently skips them.
+      - `f^(k)(infinity) = A != 0` for k >= 1: NOT supported by
+        this basis (would conflict with the basis assumption above).
+        Examples like Blasius `f'(infinity) = 1` need a variable
+        transformation by the user (e.g. `f = x + g`) that reduces
+        them to the basis-auto homogeneous case; the inverter
+        rejects nonzero asymptotic-derivative BCs with an
+        explanatory error.
+
+    `lift_xonly` of expressions that diverge at infinity (e.g.,
+    `x` itself) will produce `np.inf` / `nan` at index 0; choose
+    `u_0` and `H` with finite limits at infinity.
     """
 
     def __init__(self, N: int, L: float = 1.0) -> None:  # noqa: N803 -- N is mathematical
@@ -229,6 +234,7 @@ class RationalChebGrid:
         with np.errstate(divide="ignore"):
             self._nodes = self._L * (1.0 + self._xi) / (1.0 - self._xi)
         self._D = self._compute_differentiation_matrix()
+        self._weights = self._compute_quadrature_weights()
         self._D_powers: dict[int, NDArray[np.float64]] = {
             0: np.eye(N + 1),
             1: self._D,
@@ -244,13 +250,7 @@ class RationalChebGrid:
 
     @property
     def quadrature_weights(self) -> NDArray[np.float64]:
-        raise NotImplementedError(
-            "RationalChebGrid quadrature weights are not implemented yet — "
-            "the rational-Cheb weighted Gauss quadrature differs from "
-            "Clenshaw-Curtis and is tracked as a PLAN.org follow-up. Use "
-            "ChebGLGrid with a truncated finite domain for SHAM problems "
-            "that need a residual L^2 norm via `residual_l2_squared(grid=...)`."
-        )
+        return self._weights
 
     @property
     def domain(self) -> tuple[float, float]:
@@ -289,3 +289,48 @@ class RationalChebGrid:
         rho = (1.0 - self._xi) ** 2 / (2.0 * self._L)
         result: NDArray[np.float64] = rho.reshape(-1, 1) * d_xi
         return result
+
+    def _compute_quadrature_weights(self) -> NDArray[np.float64]:
+        """Rational-Cheb quadrature weights via Jacobian transformation.
+
+        Clenshaw-Curtis weights on `[-1, 1]` in xi-space, scaled by
+        the Jacobian `dx/dxi = 2L / (1 - xi)^2`. At j=0 (xi=1) the
+        Jacobian is infinite; the weight there is set to 0 by
+        convention since the integrand is assumed to decay at
+        infinity. Integrands that grow at infinity violate that
+        assumption and this quadrature will return nonsense for
+        them.
+        """
+        w_xi = _clenshaw_curtis_weights_reference(self._N)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            jacobian = 2.0 * self._L / (1.0 - self._xi) ** 2
+        weights = w_xi * jacobian
+        weights[0] = 0.0  # by convention; integrand assumed to decay at infty
+        return weights
+
+
+def _clenshaw_curtis_weights_reference(n: int) -> NDArray[np.float64]:
+    """Clenshaw-Curtis weights on `[-1, 1]` for the N+1 Cheb-GL nodes.
+
+    Trefethen's `clencurt.m` (*Spectral Methods in MATLAB*, Program 30).
+    Shared between `ChebGLGrid` (domain-scaled) and `RationalChebGrid`
+    (Jacobian-scaled), keeping a single implementation site for the
+    O(N) Fourier-cosine series that the weights factor through.
+    """
+    theta = np.pi * np.arange(n + 1) / n
+    w_ref = np.zeros(n + 1)
+    if n % 2 == 0:
+        w_ref[0] = 1.0 / (n**2 - 1)
+        w_ref[n] = w_ref[0]
+        v = np.ones(n - 1)
+        for k in range(1, n // 2):
+            v -= 2.0 * np.cos(2 * k * theta[1:n]) / (4 * k**2 - 1)
+        v -= np.cos(n * theta[1:n]) / (n**2 - 1)
+    else:
+        w_ref[0] = 1.0 / n**2
+        w_ref[n] = w_ref[0]
+        v = np.ones(n - 1)
+        for k in range(1, (n - 1) // 2 + 1):
+            v -= 2.0 * np.cos(2 * k * theta[1:n]) / (4 * k**2 - 1)
+    w_ref[1:n] = 2.0 * v / n
+    return w_ref

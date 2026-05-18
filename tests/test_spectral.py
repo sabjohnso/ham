@@ -324,13 +324,96 @@ def test_spectral_inverter_honors_nonzero_bc_value() -> None:
     np.testing.assert_allclose(u, 5.0 * np.ones(9), atol=1e-10)
 
 
-def test_spectral_inverter_rejects_infinite_bc_point() -> None:
-    """Asymptotic BC at infinity cannot be honoured on a finite grid."""
+def test_spectral_inverter_rejects_infinite_bc_on_grid_without_infinity_node() -> None:
+    """ChebGLGrid has no infinity node — asymptotic BCs cannot be honoured there."""
     expr = U(X).diff(X)
     grid = ChebGLGrid(N=8, domain=(0.0, 1.0))
     bcs = (BoundaryCondition(point=sp.oo, derivative_order=0),)
-    with pytest.raises(ValueError, match="finite"):
+    with pytest.raises(ValueError, match="no infinity node"):
         spectral_linear_operator(expr, dependent=U, indep=X, grid=grid, scalar="float", bcs=bcs)
+
+
+def test_spectral_inverter_rejects_nonzero_asymptotic_derivative_bc() -> None:
+    """f'(infinity) = nonzero is rejected (basis can't represent it).
+
+    The rational-Cheb basis gives f^(k)(infinity) = 0 automatically
+    for k >= 1, so a nonzero asymptotic derivative is unrepresentable
+    and the inverter raises explanatory ValueError directing users
+    to the variable-transformation workaround.
+    """
+    from ham.grids import RationalChebGrid
+
+    expr = U(X).diff(X, 3)
+    grid = RationalChebGrid(N=20, L=2.0)
+    bcs = (BoundaryCondition(point=sp.oo, derivative_order=1, value=sp.Integer(1)),)
+    with pytest.raises(ValueError, match=r"nonzero asymptotic|transform variables"):
+        spectral_linear_operator(expr, dependent=U, indep=X, grid=grid, scalar="float", bcs=bcs)
+
+
+def test_spectral_inverter_value_at_infinity_recovers_u_eq_one_minus_exp() -> None:
+    """u'(x) + u(x) = 1 on [0, infty) with u(0) = 0, u(infty) = 1 → u = 1 - exp(-x).
+
+    End-to-end test of value-at-infinity BC handling. `spectral_inverter`
+    replaces the row at the infinity index with the identity row to
+    impose u(infinity) = 1, plus the standard finite BC at x = 0.
+    The recovered grid values must match (1 - exp(-x)) on finite
+    nodes to spectral accuracy.
+    """
+    import numpy as np
+    from ham.grids import RationalChebGrid
+
+    expr_l = U(X).diff(X) + U(X)
+    grid = RationalChebGrid(N=30, L=2.0)
+    bcs = (
+        BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Integer(0)),
+        BoundaryCondition(point=sp.oo, derivative_order=0, value=sp.Integer(1)),
+    )
+    L_op = spectral_linear_operator(  # noqa: N806
+        expr_l, dependent=U, indep=X, grid=grid, scalar="float", bcs=bcs
+    )
+    rhs = np.ones(grid.nodes.shape[0])
+    u = L_op.invert(rhs)
+    expected = 1.0 - np.exp(-grid.nodes)
+    # Compare on finite nodes — index 0 is infinity, where the BC pinned u to 1.
+    np.testing.assert_allclose(u[1:], expected[1:], atol=1e-8)
+    # The asymptotic BC was honoured exactly at the infinity node.
+    assert abs(u[0] - 1.0) < 1e-12
+
+
+def test_spectral_inverter_accepts_basis_auto_homogeneous_asymptotic_bc() -> None:
+    """f'(infinity) = 0 on rational-Cheb is basis-automatic; the inverter accepts it.
+
+    The BC is silently skipped (no row replacement) because the
+    rational-Cheb basis polynomial automatically gives f'(infinity) =
+    0 for any degree. The solve still has to satisfy the finite BCs
+    and the ODE on the remaining rows.
+
+    Test problem: `u'(x) + u(x) = 1` with `u(0) = 0` and the
+    redundant `u'(infty) = 0` (which holds by inspection of the
+    exact solution 1 - exp(-x); u' = exp(-x) → 0 at infinity). The
+    auto-skipped BC means the remaining system has one finite BC
+    + N-1 ODE rows = N equations for N+1 unknowns — underdetermined.
+    So pair the auto-skipped BC with a value-at-infinity BC too.
+    """
+    import numpy as np
+    from ham.grids import RationalChebGrid
+
+    expr_l = U(X).diff(X) + U(X)
+    grid = RationalChebGrid(N=30, L=2.0)
+    bcs = (
+        BoundaryCondition(point=sp.Integer(0), derivative_order=0, value=sp.Integer(0)),
+        BoundaryCondition(point=sp.oo, derivative_order=0, value=sp.Integer(1)),
+        # This one is auto-satisfied by the basis; the inverter must
+        # accept it without raising and without overconstraining the system.
+        BoundaryCondition(point=sp.oo, derivative_order=1, value=sp.Integer(0)),
+    )
+    L_op = spectral_linear_operator(  # noqa: N806
+        expr_l, dependent=U, indep=X, grid=grid, scalar="float", bcs=bcs
+    )
+    rhs = np.ones(grid.nodes.shape[0])
+    u = L_op.invert(rhs)
+    expected = 1.0 - np.exp(-grid.nodes)
+    np.testing.assert_allclose(u[1:], expected[1:], atol=1e-8)
 
 
 # --- verify_linearity with injected equal comparator (D-4 demo) -----------

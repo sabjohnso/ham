@@ -227,6 +227,63 @@ That example is the natural follow-up reading and demonstrates
 Liao's Rule 1 (solution expression) by direct contrast with the
 slow convergence here.
 
+## On the spectral substrate (SHAM, truncated domain)
+
+The spectral Blasius redo uses the same truncated domain `[0,
+η_max]`. The honest `[0, ∞)` Blasius needs `RationalChebGrid` plus
+asymptotic-BC support in `spectral_inverter` — both are tracked as
+PLAN.org follow-ups; SHAM literature commonly truncates too, which
+is what we do here.
+
+```python
+import sympy as sp
+from examples.blasius import (
+    solve_to_spectral, f_double_prime_at_zero_spectral,
+    HOWARTH_F_DOUBLE_PRIME_AT_ZERO, ETA_MAX,
+)
+from ham.grids import ChebGLGrid
+
+grid = ChebGLGrid(N=40, domain=(0.0, float(ETA_MAX)))
+howarth = float(HOWARTH_F_DOUBLE_PRIME_AT_ZERO)
+
+for h in (-0.2, -0.4, -0.6, -0.8):
+    sol = solve_to_spectral(5, grid=grid, hbar_value=sp.Float(h))
+    fdd = f_double_prime_at_zero_spectral(sol, grid)
+    print(f"  ℏ={h:+.2f}: f''(0) = {fdd:+.4f}, |error| = {abs(fdd - howarth):.4f}")
+# ℏ=-0.20: f''(0) = +0.3239, |error| = 0.1457
+# ℏ=-0.40: f''(0) = +0.4178, |error| = 0.0518
+# ℏ=-0.60: f''(0) = +0.0585, |error| = 0.4111
+# ℏ=-0.80: f''(0) = -1.1677, |error| = 1.6373
+```
+
+Best on this sweep is ℏ = −0.4 with |f''(0) − Howarth| ≈ 0.052 —
+the same answer the sympy `analyze()` reports, term for term,
+because both substrates solve the same truncated HamProblem. The
+spectral path doesn't *improve* the convergence rate here — that
+takes either a better basis (the exponential variant) or honest
+[0, ∞) treatment, which is the rational-Chebyshev follow-up.
+
+### The double-BC-at-zero pattern
+
+Blasius has *two* BCs at the same boundary node: `f(0) = 0` and
+`f'(0) = 0`. The spectral inverter handles this via Trefethen's
+row-displacement convention (*Spectral Methods in MATLAB* Program 30):
+
+- BC `f(0) = 0` is enforced at the boundary node (the last grid row
+  in Trefethen ordering).
+- BC `f'(0) = 0` is enforced at the *same* boundary node (its row
+  *content* is `D[boundary_node, :]`), but is *placed* at the
+  adjacent row `N-1` so the first BC isn't overwritten.
+- BC `f'(η_max) = 0` (deformation, homogeneous) at the right
+  boundary node is placed at row 0.
+
+This generalises: any number of BCs at the same boundary point
+displace inward to adjacent rows until each has its own placement.
+`spectral_inverter` raises `ValueError` if there are more BCs than
+grid rows. Without this convention the second BC of any double-BC
+pair silently overwrites the first, and the partial sum violates
+the boundary condition by amounts that scale with the residual.
+
 ## Running the example as a script
 
 ```sh
@@ -235,4 +292,5 @@ poetry run python examples/blasius.py
 
 prints \(f''(0)\) at \(\hbar = -1\) (showing divergence), the best
 \(\hbar\) on the sweep grid, \(f''(0)\) there, the absolute error
-vs Howarth, and the validity-gate result.
+vs Howarth, the validity-gate result, and then the spectral
+substrate's f''(0) sweep over a 40-node ChebGL grid on `[0, 10]`.

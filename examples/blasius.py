@@ -65,12 +65,15 @@ HAM problem statement
 - Reference:       Howarth's tabulated f''(0) ≈ 0.469600.
 """
 
+import numpy as np
 import sympy as sp
 from ham.deformation import HamProblem
 from ham.diagnostics import hbar_curve_at, residual
+from ham.grids import ChebGLGrid
 from ham.nonlinear import NonlinearOperator
 from ham.operator import BoundaryCondition, LinearOperator
 from ham.solver import HamSolution, solve
+from ham.spectral import Scalar, SpectralBackend, spectral_linear_operator
 
 ETA = sp.Symbol("eta")
 F = sp.Function("f")
@@ -189,6 +192,90 @@ def analyze(solution: HamSolution[sp.Expr]) -> dict[str, sp.Expr | bool]:
     }
 
 
+# --- Spectral substrate (SHAM, truncated domain) -------------------------
+
+
+def build_spectral_problem(
+    grid: ChebGLGrid,
+    scalar: Scalar = "float",
+    *,
+    hbar_value: sp.Expr | None = None,
+) -> HamProblem[np.ndarray]:
+    """Same truncated-domain Blasius HAM problem on the spectral substrate.
+
+    Grid must be `ChebGLGrid` over `[0, eta_max]` for some finite
+    `eta_max`. Rational-Chebyshev for the honest `[0, infinity)`
+    problem is parked for a follow-up (asymptotic-BC handling in
+    `spectral_inverter` is the prerequisite); SHAM-Blasius papers in
+    the literature truncate too.
+
+    `u_0 = eta^2 / (2 eta_max)` satisfies all three truncated BCs:
+    `f(0) = 0`, `f'(0) = 0`, `f'(eta_max) = 1`. The deformation BCs
+    declared on the spectral L are the homogeneous versions.
+    """
+    eta_max_value = sp.Float(grid.domain[1])
+    u0 = ETA**2 / (sp.Integer(2) * eta_max_value)
+    n_expr = F(ETA).diff(ETA, 3) + sp.Rational(1, 2) * F(ETA) * F(ETA).diff(ETA, 2)
+    if hbar_value is None:
+        # Polynomial-basis Blasius diverges at ℏ=-1; -0.4 is empirically
+        # the right neighbourhood (the sympy-side analyze() sweep agrees).
+        hbar_value = sp.Float(-0.4) if scalar == "float" else HBAR
+    return HamProblem(
+        L=spectral_linear_operator(
+            F(ETA).diff(ETA, 3),
+            dependent=F,
+            indep=ETA,
+            grid=grid,
+            scalar=scalar,
+            bcs=(
+                BoundaryCondition(point=sp.Integer(0), derivative_order=0),
+                BoundaryCondition(point=sp.Integer(0), derivative_order=1),
+                BoundaryCondition(point=eta_max_value, derivative_order=1),
+            ),
+        ),
+        N=NonlinearOperator(expr=n_expr, dependent=F, indep=ETA),
+        H=sp.Integer(1),
+        hbar=hbar_value,
+        u0=u0,
+    )
+
+
+def solve_to_spectral(
+    order: int,
+    *,
+    grid: ChebGLGrid | None = None,
+    scalar: Scalar = "float",
+    hbar_value: sp.Expr | None = None,
+) -> HamSolution[np.ndarray]:
+    """Run the spectral HAM solver on the truncated-domain Blasius problem.
+
+    Default grid is `ChebGLGrid(N=40, domain=(0.0, 10.0))` — matches
+    `ETA_MAX = 10` from the sympy path. SHAM literature commonly uses
+    `N` in the 30-60 range for Blasius at modest HAM orders.
+    """
+    if grid is None:
+        grid = ChebGLGrid(N=40, domain=(0.0, float(ETA_MAX)))
+    backend = SpectralBackend(grid, indep=ETA, scalar=scalar)
+    problem = build_spectral_problem(grid, scalar=scalar, hbar_value=hbar_value)
+    return solve(problem, order=order, backend=backend)
+
+
+def f_double_prime_at_zero_spectral(
+    solution: HamSolution[np.ndarray],
+    grid: ChebGLGrid,
+) -> float:
+    """f''(0) from a spectral Blasius partial sum.
+
+    In Trefethen's ordering `grid.nodes[N] = a` (the left boundary),
+    so for `grid.domain = (0, eta_max)` the eta=0 node is the last
+    entry. f''(0) is `(D^2 @ partial_sum)[N]`.
+    """
+    partial = solution.partial_sum()
+    d_squared = grid.differentiation_matrix_power(2)
+    fdd_at_nodes = d_squared @ partial
+    return float(fdd_at_nodes[-1])
+
+
 if __name__ == "__main__":  # pragma: no cover -- runnable script entry point
     M = 5
     sol = solve_to(M)
@@ -209,3 +296,17 @@ if __name__ == "__main__":  # pragma: no cover -- runnable script entry point
     print("this polynomial-basis Blasius — it has a false plateau at small")
     print("positive ℏ where the residual is tiny but f''(0) is far from")
     print("Howarth's reference. See examples/blasius.py docstring for details.")
+
+    print()
+    print(f"Spectral redo (truncated [0, {ETA_MAX}], N=40 ChebGL), float scalar, M={M}")
+    spec_grid = ChebGLGrid(N=40, domain=(0.0, float(ETA_MAX)))
+    fdd_sweep = []
+    for h in (-0.2, -0.4, -0.6, -0.8):
+        sol_h = solve_to_spectral(M, grid=spec_grid, hbar_value=sp.Float(h))
+        fdd_sweep.append((h, f_double_prime_at_zero_spectral(sol_h, spec_grid)))
+    best_h, best_fdd = min(
+        fdd_sweep, key=lambda p: abs(p[1] - float(HOWARTH_F_DOUBLE_PRIME_AT_ZERO))
+    )
+    print(f"  best ℏ on the sweep:           {best_h}")
+    print(f"  f''(0) at best ℏ:              {best_fdd:+.4f}")
+    print(f"  |f''(0) - Howarth| at best ℏ:  {abs(best_fdd - howarth):+.4f}")

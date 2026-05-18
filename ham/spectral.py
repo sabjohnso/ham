@@ -178,17 +178,28 @@ def spectral_inverter(
 ) -> Callable[[_NDArrAny], _NDArrAny]:
     """Build the inverter that solves `L · u = rhs` under the declared BCs.
 
-    For each `bc`, the row of `l_matrix` at the nearest grid node to
-    `bc.point` is replaced with row `D^(bc.derivative_order)` (which
-    evaluates `u^(k)` at that node when dotted with `u`), and the
-    matching RHS entry is overwritten with `bc.value`. The modified
-    system is then solved with `np.linalg.solve` (float) or
-    `sp.Matrix.LUsolve` (sympy).
+    For each `bc` the row /content/ is `D^(bc.derivative_order)`
+    evaluated at the grid node closest to `bc.point` — that row,
+    dotted with the unknown vector `u`, computes
+    `u^(bc.derivative_order)` at that node, so setting the
+    corresponding RHS entry to `bc.value` enforces the BC. The
+    /placement/ row of `l_matrix` to overwrite is the closest unused
+    row to that evaluation index, which lets multiple BCs at the
+    same boundary node coexist (Blasius has both `f(0)=0` and
+    `f'(0)=0` at η=0; the second one displaces inward to the next
+    grid row, following Trefethen *Spectral Methods in MATLAB*
+    Program 30). The modified system is then solved with
+    `np.linalg.solve` (float) or `sp.Matrix.LUsolve` (sympy).
 
     Asymptotic BCs (`bc.point.is_infinite`) are rejected — a finite
-    grid has no infinite node to anchor them to; semi-infinite
-    problems will use a rational-Chebyshev grid in a later stage.
+    grid has no infinite node to anchor them to. Semi-infinite
+    problems with asymptotic BCs need `RationalChebGrid` plus
+    `spectral_inverter` extensions (the rational-Cheb D matrix has
+    a zero row at the infinity node, so additional BC handling is
+    required there — tracked as a PLAN.org follow-up).
     """
+    n_plus_1 = grid.nodes.shape[0]
+    used_rows: set[int] = set()
     replacements: list[tuple[int, NDArray[np.float64], sp.Expr]] = []
     for bc in bcs:
         if not bc.point.is_finite:
@@ -201,9 +212,21 @@ def spectral_inverter(
         a, b = grid.domain
         if not a <= point_val <= b:
             raise ValueError(f"BC point {point_val} lies outside the grid's domain {grid.domain}.")
-        idx = int(np.argmin(np.abs(grid.nodes - point_val)))
-        replacement_row = grid.differentiation_matrix_power(bc.derivative_order)[idx, :]
-        replacements.append((idx, replacement_row, bc.value))
+        eval_idx = int(np.argmin(np.abs(grid.nodes - point_val)))
+        replacement_row = grid.differentiation_matrix_power(bc.derivative_order)[eval_idx, :]
+        # Pick the closest unused matrix row for placement; additional
+        # BCs at the same boundary node displace inward to adjacent rows.
+        distances_from_eval = np.abs(np.arange(n_plus_1) - eval_idx)
+        candidate_order = np.argsort(distances_from_eval, kind="stable")
+        try:
+            placement_idx = next(int(i) for i in candidate_order if int(i) not in used_rows)
+        except StopIteration as exc:
+            raise ValueError(
+                f"spectral_inverter cannot place more BCs than grid rows; "
+                f"got {len(bcs)} BCs on a grid with {n_plus_1} nodes."
+            ) from exc
+        used_rows.add(placement_idx)
+        replacements.append((placement_idx, replacement_row, bc.value))
 
     def invert(rhs: _NDArrAny) -> _NDArrAny:
         l_mod = l_matrix.copy()

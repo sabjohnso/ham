@@ -114,3 +114,84 @@ def test_hbar_remains_symbolic_in_u_k_for_k_geq_1(sol_order_5: HamSolution[sp.Ex
     """u_k for k >= 1 carries the ℏ symbol; substitute-late convention holds."""
     for k in range(1, sol_order_5.order + 1):
         assert HBAR in sol_order_5.phi.coeff(k).free_symbols
+
+
+# --- Spectral substrate (SHAM, truncated domain) -------------------------
+
+
+def test_spectral_solve_recovers_sympy_partial_sum_at_same_hbar() -> None:
+    """SHAM and the sympy path agree on Blasius at a fixed ℏ.
+
+    The two substrates solve the same truncated HamProblem (BCs at
+    eta=0 and eta=eta_max with the row-displacement convention for
+    the double BC at eta=0); their grid values should match to a
+    tolerance set by the spectral grid's resolution.
+    """
+    import numpy as np
+    from examples.blasius import (
+        ETA,
+        solve_to,
+        solve_to_spectral,
+    )
+    from ham.grids import ChebGLGrid
+
+    grid = ChebGLGrid(N=40, domain=(0.0, 10.0))
+    sol_sym = solve_to(2)
+    sol_spec = solve_to_spectral(2, grid=grid, hbar_value=sp.Float(-0.4))
+
+    partial_sym = sol_sym.evaluate_at_hbar(sp.Float(-0.4))
+    sym_at_grid = np.array(
+        [float(partial_sym.subs(ETA, sp.Float(n))) for n in grid.nodes],
+        dtype=np.float64,
+    )
+    np.testing.assert_allclose(sol_spec.partial_sum(), sym_at_grid, atol=1e-10)
+
+
+def test_spectral_f_double_prime_at_zero_close_to_howarth_at_best_hbar() -> None:
+    """SHAM at the best ℏ on the sweep grid lands close to Howarth's f''(0).
+
+    Same convergence story as the sympy path: polynomial-basis Blasius
+    is slow; at M=5 the best ℏ on the sweep [-0.2, -0.4, -0.6, -0.8]
+    is -0.4 with f''(0) ≈ 0.418 (~0.05 from Howarth's 0.4696). That
+    matches the sympy analyze() output term for term.
+    """
+    from examples.blasius import (
+        HOWARTH_F_DOUBLE_PRIME_AT_ZERO,
+        f_double_prime_at_zero_spectral,
+        solve_to_spectral,
+    )
+    from ham.grids import ChebGLGrid
+
+    grid = ChebGLGrid(N=40, domain=(0.0, 10.0))
+    howarth = float(HOWARTH_F_DOUBLE_PRIME_AT_ZERO)
+    fdd_sweep = []
+    for h in (-0.2, -0.4, -0.6, -0.8):
+        sol = solve_to_spectral(5, grid=grid, hbar_value=sp.Float(h))
+        fdd_sweep.append((h, f_double_prime_at_zero_spectral(sol, grid)))
+    best_h, best_fdd = min(fdd_sweep, key=lambda p: abs(p[1] - howarth))
+    assert best_h == -0.4
+    assert abs(best_fdd - howarth) < 0.1
+
+
+def test_spectral_inverter_handles_double_bc_at_same_point() -> None:
+    """Two BCs at the same boundary node solve correctly via row displacement.
+
+    Pins the row-displacement fix in `spectral_inverter`: Blasius has
+    `f(0)=0` and `f'(0)=0` both at η=0 (the last grid node in
+    Trefethen ordering). Without displacement, the second BC
+    overwrites the first and the system is wrong. With displacement,
+    the second BC goes to the adjacent row N-1, both BCs are
+    enforced, and the partial sum at η=0 satisfies u_partial(0)=0
+    along with u_partial'(0)=0.
+    """
+    from examples.blasius import solve_to_spectral
+    from ham.grids import ChebGLGrid
+
+    grid = ChebGLGrid(N=40, domain=(0.0, 10.0))
+    sol = solve_to_spectral(3, grid=grid, hbar_value=sp.Float(-0.4))
+    partial = sol.partial_sum()
+    # Last node is eta=0 in Trefethen ordering.
+    assert abs(partial[-1]) < 1e-10
+    # f'(0) via D @ partial at the last node.
+    fprime_at_zero = (grid.differentiation_matrix @ partial)[-1]
+    assert abs(float(fprime_at_zero)) < 1e-10

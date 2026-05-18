@@ -361,37 +361,58 @@ partial sum on a 40-node ChebGL grid) pins the two answers to
 1e-10 — both substrates solve the same truncated HamProblem and
 agree term for term.
 
-## Tracked follow-ups
+## Tracked follow-ups (2026-05-18 update)
 
-After the post-S9 session, three concrete items remain on the
-SHAM extension roadmap. Each is tractable as a self-contained
-follow-up; in contrast with the truly-out-of-scope items in the
-next section, none requires architectural moves on the scale of
-S0-S9.
+Three concrete items were on the post-S9 roadmap. Two landed
+in 2026-05-18; one remains.
 
-- **Rational-Cheb quadrature weights.**
-  `RationalChebGrid.quadrature_weights` raises
-  `NotImplementedError`. The classical SHAM treatment uses a
-  Gauss-Chebyshev formula in ξ-space weighted by the Jacobian
-  `dx/dξ = 2L/(1-ξ)²`, which transforms to a generalised quadrature
-  on `[0, ∞)`. Implementing this would let
-  `residual_l2_squared(sol, grid=rational_grid)` return a meaningful
-  integral over the unbounded domain.
-- **Asymptotic-BC handling in `spectral_inverter`.** The current
-  inverter rejects `bc.point.is_infinite` because the row of `D_x`
-  at the infinity node is identically zero. Adding support means
-  detecting this case and using the ξ-space row instead — the row
-  that evaluates `u'(ξ)` at the infinity image, which equals
-  `lim_{x → ∞} (dx/dξ) · f'(x) = 0 = f'(∞)` modulo the
-  substitution structure. Unlocks honest Blasius on `[0, ∞)`
-  without truncation.
-- **Block-structured spectral Padé** (S9 follow-up).
-  `homotopy_pade` rejects spectral solutions; the block-LU Padé
-  construction over grid-vector coefficients is documented in the
-  literature but not yet implemented here. The decision in S9 was
-  "ship sympy-only; spectral Padé is not the SHAM headline
-  feature" — that decision still holds, but the construction is
-  tracked as a follow-up rather than abandoned.
+### Landed: rational-Cheb quadrature
+
+`_clenshaw_curtis_weights_reference(n)` is now a module-level
+helper in [`ham.grids`](../api/grids.md). `ChebGLGrid` uses it
+then domain-scales by `(b-a)/2`; `RationalChebGrid` uses it then
+transforms via the Jacobian `dx/dξ = 2L/(1-ξ)²`. The weight at
+the infinity image is set to 0 by convention since SHAM
+integrands are assumed to decay at infinity; tests verify
+`∫_0^∞ exp(-x) dx ≈ 1` to 1e-6 and `∫_0^∞ 1/(1+x)² dx ≈ 1` to
+1e-3 (the rational-decay convergence is slower).
+
+`residual_l2_squared(sol, grid=rational_grid)` now returns
+meaningful integrals over `[0, ∞)`.
+
+### Landed: asymptotic-BC handling in `spectral_inverter`
+
+The inverter detects `bc.point.is_infinite` and dispatches on the
+derivative order:
+
+- `f(∞) = A` (`derivative_order = 0`): row replacement at the
+  infinity index with the identity row, RHS = A. Honest
+  value-at-infinity BC.
+- `f^(k)(∞) = 0` for k ≥ 1: basis-automatic. Any rational-Cheb
+  polynomial F(ξ) of degree N gives `f^(k)(x) → 0` as `x → ∞`
+  by construction (chain-rule factors of `(1-ξ)^(2k)` vanish at
+  ξ=1). The inverter accepts these BCs and silently skips the
+  row replacement; the system isn't overconstrained because the
+  basis itself enforces them.
+- `f^(k)(∞) = A ≠ 0` for k ≥ 1: rejected with an explanatory
+  `ValueError`. The basis cannot represent functions with
+  nonzero asymptotic derivatives; problems like Blasius
+  `f'(∞) = 1` need a variable transformation by the user
+  (`f = x + g`, then `g'(∞) = 0` is the basis-auto case).
+
+An end-to-end test pins `u' + u = 1, u(0) = 0, u(∞) = 1` on the
+rational grid: the spectral solve recovers `1 - exp(-x)` on the
+grid to 1e-8.
+
+### Remaining: block-structured spectral Padé (S9 follow-up)
+
+`homotopy_pade` still rejects spectral solutions. The
+block-structured Padé construction over grid-vector coefficients
+is documented in the literature but not yet implemented here.
+The S9 decision was "ship sympy-only; spectral Padé is not the
+SHAM headline feature" — that decision still holds, but the
+construction is tracked as a follow-up rather than abandoned.
+This is the final remaining item from the post-S9 roadmap.
 
 ## Where to go next
 

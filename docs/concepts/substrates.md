@@ -58,11 +58,15 @@ operations as a frozen dataclass. To add a new substrate (Fourier
 on the circle, Legendre-Gauss for alternative quadrature, …) you
 write one factory function returning a `Backend[YourCoefficient]`
 and the rest of the library — solver, diagnostics, contracts —
-comes for free. A second concrete substrate — rational-Chebyshev
-on \([0, \infty)\) — ships as a minimal Grid implementation today
-(differentiation matrix only; rational-Cheb quadrature and
-asymptotic-BC handling are tracked follow-ups in the [Stage
-history](../design/stages.md#tracked-follow-ups)).
+comes for free. A second concrete grid — rational-Chebyshev on
+\([0, \infty)\) — ships alongside `ChebGLGrid`; it supports
+rational-Cheb quadrature, asymptotic value-at-infinity BCs, and
+basis-auto homogeneous derivative BCs. Nonzero asymptotic
+derivatives (like Blasius `f'(\infty) = 1`) still need user
+variable-transformation; block-structured spectral Padé remains
+the only outstanding [tracked follow-up][followup].
+
+[followup]: ../design/stages.md#remaining-block-structured-spectral-pade-s9-follow-up
 
 Equality is *not* a Backend operation. The library's design
 decision is that the comparator used to decide "are these two

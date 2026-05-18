@@ -55,10 +55,14 @@ operations — are assumed to dispatch natively on \(C\); both
 
 The [`Backend[C]`](../api/backend.md) Protocol packages these six
 operations as a frozen dataclass. To add a new substrate (Fourier
-on the circle, rational-Chebyshev on \([0, \infty)\), …) you write
-one factory function returning a `Backend[YourCoefficient]` and the
-rest of the library — solver, diagnostics, contracts — comes for
-free.
+on the circle, Legendre-Gauss for alternative quadrature, …) you
+write one factory function returning a `Backend[YourCoefficient]`
+and the rest of the library — solver, diagnostics, contracts —
+comes for free. A second concrete substrate — rational-Chebyshev
+on \([0, \infty)\) — ships as a minimal Grid implementation today
+(differentiation matrix only; rational-Cheb quadrature and
+asymptotic-BC handling are tracked follow-ups in the [Stage
+history](../design/stages.md#tracked-follow-ups)).
 
 Equality is *not* a Backend operation. The library's design
 decision is that the comparator used to decide "are these two

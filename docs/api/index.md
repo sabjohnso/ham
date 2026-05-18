@@ -46,8 +46,8 @@ core, solver loop, and diagnostic surface.
 
 | Module | Responsibility | Headline surface |
 | --- | --- | --- |
-| [`ham.grids`](grids.md) | The `Grid` Protocol — nodes, differentiation matrix, quadrature weights, domain, memoised \(D^k\). `ChebGLGrid` is the first concrete implementation; the protocol is intentionally small so further families (rational-Chebyshev, Fourier) plug in without touching consumers. | `Grid`, `ChebGLGrid` |
-| [`ham.spectral`](spectral.md) | `SpectralBackend(grid, indep, scalar)` is the `Backend[np.ndarray]` for SHAM, generic over `scalar ∈ {"float", "sympy"}`: float for classical SHAM, sympy-scalar for the symbolic-ℏ variant. `spectral_linear_operator` parses a linear-in-\(u\) sympy expression into the dense \(L\) matrix; `spectral_inverter` imposes BCs by row replacement. | `SpectralBackend`, `Scalar`, `spectral_linear_operator`, `spectral_inverter` |
+| [`ham.grids`](grids.md) | The `Grid` Protocol — nodes, differentiation matrix, quadrature weights, domain, memoised \(D^k\). Two concrete implementations ship: `ChebGLGrid` for finite intervals, and `RationalChebGrid` for \([0, \infty)\) via the algebraic map (minimal: differentiation only; rational-Cheb quadrature is a tracked follow-up). The protocol is small so further families (Fourier, Legendre, mixed bases) plug in without touching consumers. | `Grid`, `ChebGLGrid`, `RationalChebGrid` |
+| [`ham.spectral`](spectral.md) | `SpectralBackend(grid, indep, scalar)` is the `Backend[np.ndarray]` for SHAM, generic over `scalar ∈ {"float", "sympy"}`: float for classical SHAM, sympy-scalar for the symbolic-ℏ variant. `spectral_linear_operator` parses a linear-in-\(u\) sympy expression into the dense \(L\) matrix; `spectral_inverter` imposes BCs by row replacement, displacing additional BCs at the same boundary node to adjacent rows (Trefethen Program 30 convention). | `SpectralBackend`, `Scalar`, `spectral_linear_operator`, `spectral_inverter` |
 
 ## What you won't find here
 

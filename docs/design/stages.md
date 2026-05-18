@@ -337,19 +337,69 @@ shaped the rest of the arc:
   tolerance, with the sympy-scalar spectral run reproducing the
   float-scalar result after `subs(ℏ, -1)`.
 
+## Post-S9 deferred-items session (2026-05-18)
+
+S0-S9 left three items explicitly deferred — `verify_initial_guess_grid`
+(the S4 sibling that needed `Grid` to exist), Blasius spectral redo
+(S7 deferred citing the [0, ∞) domain mismatch), and the SHAM
+worked-examples gap that surfaced after the docs landed. A focused
+session worked through all four (the rational-Cheb grid was added
+to clear the Blasius blocker), and a latent bug in
+`spectral_inverter` surfaced and was fixed along the way.
+
+| # | Item | Headline change | Module(s) |
+| --- | --- | --- | --- |
+| Post-S9.1 | `verify_initial_guess_grid` | Spectral sibling of `verify_initial_guess`: lifts `u_0` to grid, checks `(D^k @ u_0_grid)[node_idx] = bc.value` within tol. Catches symbolic-but-not-grid-precise initial guesses. | [`ham.contracts`](../api/contracts.md) |
+| Post-S9.2 | SHAM worked examples | `quadratic_drag.py` and `logistic.py` extended with `build_spectral_problem` / `solve_to_spectral` / spectral diagnostics. Two doc pages gain "On the spectral substrate (SHAM)" sections; the logistic page shows both scalar modes side-by-side. | [`examples/quadratic_drag.py`](../examples/quadratic-drag.md), [`examples/logistic.py`](../examples/logistic.md) |
+| Post-S9.3 | `RationalChebGrid` (minimal) | New `Grid` Protocol implementation for `[0, ∞)` via the algebraic map `x = L(1+ξ)/(1-ξ)`. Differentiation matrix from the chain rule `D_x = diag(ρ)·D_ξ`. Quadrature weights and asymptotic-BC support are both tracked follow-ups; documented in the class docstring. | [`ham.grids`](../api/grids.md) |
+| Post-S9.4 | Blasius spectral redo + bug fix | `blasius.py` extends with the truncated-domain spectral path. `spectral_inverter` row-displacement fix (Trefethen *Spectral Methods in MATLAB* Program 30): when two BCs share a grid node, the second one's row content uses the boundary-node index but is *placed* at the adjacent row so the first is not overwritten. Without this, Blasius's `f(0) = 0` and `f'(0) = 0` collided silently. | [`ham.spectral`](../api/spectral.md), [`examples/blasius.py`](../examples/blasius.md) |
+
+The four items together added 27 tests (338 → 365); ruff + mypy
+strict and `mkdocs build --strict` remain clean. The Blasius
+cross-substrate check (sympy partial sum at ℏ = -0.4 vs spectral
+partial sum on a 40-node ChebGL grid) pins the two answers to
+1e-10 — both substrates solve the same truncated HamProblem and
+agree term for term.
+
+## Tracked follow-ups
+
+After the post-S9 session, three concrete items remain on the
+SHAM extension roadmap. Each is tractable as a self-contained
+follow-up; in contrast with the truly-out-of-scope items in the
+next section, none requires architectural moves on the scale of
+S0-S9.
+
+- **Rational-Cheb quadrature weights.**
+  `RationalChebGrid.quadrature_weights` raises
+  `NotImplementedError`. The classical SHAM treatment uses a
+  Gauss-Chebyshev formula in ξ-space weighted by the Jacobian
+  `dx/dξ = 2L/(1-ξ)²`, which transforms to a generalised quadrature
+  on `[0, ∞)`. Implementing this would let
+  `residual_l2_squared(sol, grid=rational_grid)` return a meaningful
+  integral over the unbounded domain.
+- **Asymptotic-BC handling in `spectral_inverter`.** The current
+  inverter rejects `bc.point.is_infinite` because the row of `D_x`
+  at the infinity node is identically zero. Adding support means
+  detecting this case and using the ξ-space row instead — the row
+  that evaluates `u'(ξ)` at the infinity image, which equals
+  `lim_{x → ∞} (dx/dξ) · f'(x) = 0 = f'(∞)` modulo the
+  substitution structure. Unlocks honest Blasius on `[0, ∞)`
+  without truncation.
+- **Block-structured spectral Padé** (S9 follow-up).
+  `homotopy_pade` rejects spectral solutions; the block-LU Padé
+  construction over grid-vector coefficients is documented in the
+  literature but not yet implemented here. The decision in S9 was
+  "ship sympy-only; spectral Padé is not the SHAM headline
+  feature" — that decision still holds, but the construction is
+  tracked as a follow-up rather than abandoned.
+
 ## Where to go next
 
-The Stage-1 to Stage-13 line and the S0-S9 substrate-parametrisation
-arc together cover the public surface as it ships. Remaining
-extension directions live above:
+The Stage-1 to Stage-13 line, the S0-S9 substrate-parametrisation
+arc, and the post-S9 deferred-items session together cover the
+public surface as it ships. Remaining extension directions live
+above the current foundation:
 
-- **Rational-Chebyshev grid** for Blasius-class problems on
-  \([0, \infty)\). The Grid Protocol is the plug-in point; the
-  finite-domain spectral redo of Blasius is deferred per the S7
-  plan note.
-- **Block-structured spectral Padé.** S9's deferred follow-up:
-  the linear system has grid-vector entries; `homotopy_pade` would
-  need a substrate-aware Padé construction.
 - **Multi-point Padé and Hermite-Padé** on the sympy substrate —
   generalisations of Stage 8 that compose on top of `HamSolution.phi`
   without touching the upstream stages.
@@ -357,9 +407,16 @@ extension directions live above:
   has room for nonlinear-polynomial form verification and
   invertibility-on-image checks for `L`; see the module docstring's
   extension policy.
+- **More grid families.** The `Grid` Protocol accepts new
+  implementations (Fourier on the circle for periodic problems,
+  Legendre-Gauss for alternative quadrature, mixed
+  polynomial-exponential bases). Each fills out the substrate
+  surface for problems not naturally on a Chebyshev finite
+  interval or the algebraic-map [0, ∞).
 
-Each new direction follows the pattern Stages 1-13 and S0-S9
-established: a design conversation in `PLAN.org`, sub-stages with
-red-green-refactor commits, algebraic identities pinned by property
+Each new direction follows the pattern Stages 1-13, S0-S9, and
+the post-S9 session established: a design conversation in
+`PLAN.org`, sub-stages with red-green-refactor commits,
+algebraic identities pinned by property
 tests, and a PLAN.org-style record of what was decided
 and why.

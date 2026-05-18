@@ -139,3 +139,110 @@ def test_chebgl_diff_matrix_power_rejects_negative_k() -> None:
     grid = ChebGLGrid(N=8)
     with pytest.raises(ValueError, match="k >= 0"):
         grid.differentiation_matrix_power(-1)
+
+
+# --- RationalChebGrid ----------------------------------------------------
+
+
+def test_rational_cheb_grid_node_count() -> None:
+    """RationalChebGrid(N) has N+1 nodes (matching ChebGLGrid)."""
+    from ham.grids import RationalChebGrid
+
+    grid = RationalChebGrid(N=8)
+    assert grid.nodes.shape == (9,)
+
+
+def test_rational_cheb_grid_endpoint_at_infinity() -> None:
+    """Index 0 maps to infinity; index N maps to 0."""
+    from ham.grids import RationalChebGrid
+
+    grid = RationalChebGrid(N=8, L=2.0)
+    assert np.isinf(grid.nodes[0])
+    assert np.isclose(grid.nodes[-1], 0.0)
+
+
+def test_rational_cheb_grid_node_density_clusters_near_l() -> None:
+    """With L=1 the median interior node sits near x=1 — characteristic length."""
+    from ham.grids import RationalChebGrid
+
+    grid = RationalChebGrid(N=20, L=1.0)
+    finite_nodes = grid.nodes[1:]
+    median_node = np.median(finite_nodes)
+    assert np.isclose(median_node, 1.0, atol=0.2)
+
+
+def test_rational_cheb_grid_domain() -> None:
+    """domain reports (0, inf)."""
+    from ham.grids import RationalChebGrid
+
+    grid = RationalChebGrid(N=8)
+    a, b = grid.domain
+    assert a == 0.0
+    assert np.isinf(b)
+
+
+def test_rational_cheb_grid_rejects_invalid_n() -> None:
+    from ham.grids import RationalChebGrid
+
+    with pytest.raises(ValueError, match="N >= 1"):
+        RationalChebGrid(N=0)
+
+
+def test_rational_cheb_grid_rejects_invalid_l() -> None:
+    from ham.grids import RationalChebGrid
+
+    with pytest.raises(ValueError, match="L > 0"):
+        RationalChebGrid(N=8, L=0)
+
+
+def test_rational_cheb_grid_diff_matrix_zero_row_at_infinity() -> None:
+    """The row of D_x at the infinity node is identically zero.
+
+    At xi=1 (the image of x=infinity), dxi/dx = 0, so the chain rule
+    D_x = diag(rho) @ D_xi produces a zero row at index 0. The
+    implementation exposes this rather than papering over it.
+    """
+    from ham.grids import RationalChebGrid
+
+    grid = RationalChebGrid(N=8)
+    np.testing.assert_array_equal(grid.differentiation_matrix[0, :], np.zeros(9))
+
+
+def test_rational_cheb_grid_diff_matrix_recovers_exp_derivative() -> None:
+    """D_x[exp(-x)] equals -exp(-x) at the finite nodes to spectral accuracy."""
+    from ham.grids import RationalChebGrid
+
+    grid = RationalChebGrid(N=24, L=4.0)
+    # exp(-inf) is 0 in numpy, so this works as-is including at index 0.
+    f = np.exp(-grid.nodes)
+    fprime_computed = grid.differentiation_matrix @ f
+    expected = -np.exp(-grid.nodes)
+    # Compare on finite nodes (skip j=0, the zero-row at infinity)
+    np.testing.assert_allclose(fprime_computed[1:], expected[1:], atol=1e-6)
+
+
+def test_rational_cheb_grid_quadrature_weights_not_implemented() -> None:
+    """quadrature_weights raises NotImplementedError on this grid."""
+    from ham.grids import RationalChebGrid
+
+    grid = RationalChebGrid(N=8)
+    with pytest.raises(NotImplementedError, match="rational-Cheb"):
+        _ = grid.quadrature_weights
+
+
+def test_rational_cheb_grid_diff_matrix_power_memoised() -> None:
+    """D_x^k returns the same ndarray object on repeated access."""
+    from ham.grids import RationalChebGrid
+
+    grid = RationalChebGrid(N=8)
+    a = grid.differentiation_matrix_power(2)
+    b = grid.differentiation_matrix_power(2)
+    assert a is b
+
+
+def test_rational_cheb_grid_diff_matrix_power_zero_is_identity() -> None:
+    """D_x^0 is the identity matrix (same as ChebGLGrid's convention)."""
+    from ham.grids import RationalChebGrid
+
+    grid = RationalChebGrid(N=8)
+    np.testing.assert_array_equal(grid.differentiation_matrix_power(0), np.eye(9))

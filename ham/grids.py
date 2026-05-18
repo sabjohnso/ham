@@ -10,8 +10,19 @@ surface keeps the spectral backend, the spectral linear-operator
 factory, and downstream diagnostics from caring which family they're
 working with (PLAN.org D-3).
 
-S5a ships `ChebGLGrid` only; other grid families are added by
-implementing the protocol without touching the Backend or any consumer.
+Two concrete grids ship:
+
+  - `ChebGLGrid(N, domain=(a, b))` — Chebyshev-Gauss-Lobatto on a
+    finite interval. The default for SHAM on bounded domains.
+  - `RationalChebGrid(N, L=1.0)` — algebraic-map rational-Chebyshev
+    on [0, infinity). Useful when the problem's natural domain is
+    semi-infinite and a finite truncation would distort the solve.
+    Ships as a minimal implementation: differentiation matrix only,
+    no quadrature, no asymptotic-BC support in `spectral_inverter`
+    (the bc.point.is_finite check there rejects bc.point = sp.oo).
+    Practical SHAM on semi-infinite domains still uses truncated
+    `ChebGLGrid`; `RationalChebGrid` is the foundation for the
+    follow-up that wires asymptotic BCs and rational-Cheb quadrature.
 """
 
 from typing import Protocol
@@ -163,3 +174,118 @@ class ChebGLGrid:
                 v -= 2.0 * np.cos(2 * k * theta[1:n]) / (4 * k**2 - 1)
         w_ref[1:n] = 2.0 * v / n
         return w_ref * (b - a) / 2.0
+
+
+class RationalChebGrid:
+    """Rational-Chebyshev grid on `[0, infinity)` via the algebraic map.
+
+    Maps the Chebyshev reference interval `[-1, 1]` to `[0, infinity)`
+    via `x = L · (1 + xi) / (1 - xi)`, with `L > 0` a characteristic
+    length controlling node density near the origin (smaller `L`
+    clusters more nodes near 0; larger `L` stretches the grid
+    further into `x`). Nodes follow Trefethen's ordering (decreasing
+    from `xi = 1` at index 0 to `xi = -1` at index N):
+
+        xi_j = cos(pi · j / N),    x_j = L · (1 + xi_j) / (1 - xi_j).
+
+    At index 0 (`xi = 1`) the physical node is at infinity; it is
+    stored as `np.inf` in `nodes`.
+
+    The differentiation matrix is built by the chain rule. With
+    `rho_j = dxi/dx|_{xi=xi_j} = (1 - xi_j)^2 / (2 L)`,
+
+        D_x = diag(rho) @ D_xi,
+
+    where `D_xi` is the standard ChebGL differentiation matrix on
+    `[-1, 1]`. At index 0 the row is identically zero because
+    `dxi/dx = 0` at the infinity image — a fact this implementation
+    exposes rather than papers over, since `spectral_inverter`'s
+    `bc.point.is_finite` guard already rules out the asymptotic BCs
+    that would require special handling there.
+
+    **Limitations** (PLAN.org follow-ups):
+
+      - `quadrature_weights` is not implemented; the rational-Cheb
+        weighted Gauss quadrature differs from Clenshaw-Curtis and
+        is left as a follow-up. Accessing the property raises
+        `NotImplementedError`.
+      - `spectral_inverter` rejects `bc.point = sp.oo`; asymptotic
+        BCs are not yet supported on this grid. SHAM problems on
+        semi-infinite domains should use `ChebGLGrid(N, (0, x_max))`
+        with a truncated cap until that lands.
+      - `lift_xonly` of expressions that diverge at infinity (e.g.,
+        `x` itself) will produce `np.inf` / `nan` at index 0.
+        Choose `u_0` and `H` with finite limits at infinity.
+    """
+
+    def __init__(self, N: int, L: float = 1.0) -> None:  # noqa: N803 -- N is mathematical
+        if N < 1:
+            raise ValueError(f"RationalChebGrid requires N >= 1; got N={N}.")
+        if L <= 0:
+            raise ValueError(f"RationalChebGrid requires L > 0; got L={L}.")
+        self._N = N
+        self._L = float(L)
+        self._xi = np.cos(np.pi * np.arange(N + 1) / N)
+        with np.errstate(divide="ignore"):
+            self._nodes = self._L * (1.0 + self._xi) / (1.0 - self._xi)
+        self._D = self._compute_differentiation_matrix()
+        self._D_powers: dict[int, NDArray[np.float64]] = {
+            0: np.eye(N + 1),
+            1: self._D,
+        }
+
+    @property
+    def nodes(self) -> NDArray[np.float64]:
+        return self._nodes
+
+    @property
+    def differentiation_matrix(self) -> NDArray[np.float64]:
+        return self._D
+
+    @property
+    def quadrature_weights(self) -> NDArray[np.float64]:
+        raise NotImplementedError(
+            "RationalChebGrid quadrature weights are not implemented yet — "
+            "the rational-Cheb weighted Gauss quadrature differs from "
+            "Clenshaw-Curtis and is tracked as a PLAN.org follow-up. Use "
+            "ChebGLGrid with a truncated finite domain for SHAM problems "
+            "that need a residual L^2 norm via `residual_l2_squared(grid=...)`."
+        )
+
+    @property
+    def domain(self) -> tuple[float, float]:
+        return (0.0, float("inf"))
+
+    @property
+    def L(self) -> float:  # noqa: N802 -- mathematical name
+        """The characteristic-length parameter controlling node density."""
+        return self._L
+
+    def differentiation_matrix_power(self, k: int) -> NDArray[np.float64]:
+        """Return `D_x^k`, memoised on the grid instance."""
+        if k < 0:
+            raise ValueError(f"differentiation_matrix_power requires k >= 0; got k={k}.")
+        if k not in self._D_powers:
+            base_k = max(j for j in self._D_powers if j < k)
+            result = self._D_powers[base_k]
+            for _ in range(k - base_k):
+                result = result @ self._D
+            self._D_powers[k] = result
+        return self._D_powers[k]
+
+    def _compute_differentiation_matrix(self) -> NDArray[np.float64]:
+        # Reference Chebyshev-GL differentiation matrix in xi-space.
+        n = self._N
+        j = np.arange(n + 1)
+        c = np.ones(n + 1)
+        c[0] = 2.0
+        c[n] = 2.0
+        c *= (-1.0) ** j
+        x_mat = np.tile(self._xi.reshape(-1, 1), (1, n + 1))
+        dx_mat = x_mat - x_mat.T
+        d_xi = np.outer(c, 1.0 / c) / (dx_mat + np.eye(n + 1))
+        d_xi -= np.diag(d_xi.sum(axis=1))
+        # Chain rule: D_x = diag(rho) @ D_xi with rho = dxi/dx.
+        rho = (1.0 - self._xi) ** 2 / (2.0 * self._L)
+        result: NDArray[np.float64] = rho.reshape(-1, 1) * d_xi
+        return result
